@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}食物链查询{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🔗 食物链查询</h2>
+    <p class="subtitle">基于 Neo4j 图数据库的路径查询</p>
+</div>
+
+<div class="query-panel">
+    <form id="query-form" onsubmit="queryFoodChain(event)">
+        <div class="query-inputs">
+            <div class="form-group">
+                <label>起始物种</label>
+                <select name="start_id" id="start-species" required>
+                    <option value="">请选择</option>
+                </select>
+            </div>
+
+            <div class="arrow-icon">→</div>
+
+            <div class="form-group">
+                <label>目标物种</label>
+                <select name="end_id" id="end-species" required>
+                    <option value="">请选择</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn btn-primary">查询</button>
+        </div>
+    </form>
+</div>
+
+<div id="result-container" class="result-container" style="display: none;">
+    <h3>查询结果</h3>
+    <div id="food-chain-result"></div>
+</div>
+
+<script>
+// 加载物种列表
+async function loadSpeciesOptions() {
+    try {
+        const response = await fetch('/api/species');
+        const species = await response.json();
+        
+        const options = species.map(s => 
+            `<option value="${s._id}">${s.name} (${s.category})</option>`
+        ).join('');
+        
+        document.getElementById('start-species').innerHTML = 
+            '<option value="">请选择</option>' + options;
+        document.getElementById('end-species').innerHTML = 
+            '<option value="">请选择</option>' + options;
+    } catch (error) {
+        console.error('加载失败:', error);
+    }
+}
+
+async function queryFoodChain(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const startId = formData.get('start_id');
+    const endId = formData.get('end_id');
+    
+    try {
+        const response = await fetch(`/api/food-chain?start=${startId}&end=${endId}`);
+        const result = await response.json();
+        
+        const container = document.getElementById('result-container');
+        const resultDiv = document.getElementById('food-chain-result');
+        
+        if (result.chain && result.chain.length > 0) {
+            const chainHtml = result.chain.map((item, index) => `
+                <div class="chain-item">
+                    <div class="species-node">
+                        <span class="node-icon">${index === 0 ? '🦁' : index === result.chain.length - 1 ? '🌿' : '🐾'}</span>
+                        <span class="node-name">${item.name}</span>
+                    </div>
+                    ${index < result.chain.length - 1 ? '<div class="chain-arrow">→</div>' : ''}
+                </div>
+            `).join('');
+            
+            resultDiv.innerHTML = `
+                <div class="food-chain">
+                    ${chainHtml}
+                </div>
+                <p class="chain-length">食物链长度: ${result.chain.length} 级</p>
+            `;
+            container.style.display = 'block';
+        } else {
+            resultDiv.innerHTML = '<p class="no-data">未找到从该物种到目标物种的食物链路径</p>';
+            container.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('查询失败:', error);
+        alert('查询失败，请重试');
+    }
+}
+
+loadSpeciesOptions();
+</script>
+{% endblock %}

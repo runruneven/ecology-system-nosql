@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h2>欢迎使用动植物物种生态关系系统</h2>
+    <p>基于 MongoDB、Neo4j、Redis 构建的生态数据管理平台</p>
+</div>
+
+<div class="dashboard">
+    <div class="card">
+        <div class="card-icon">🦁</div>
+        <h3>物种总数</h3>
+        <p class="stat-number" id="species-count">加载中...</p>
+    </div>
+
+    <div class="card">
+        <div class="card-icon">🔗</div>
+        <h3>生态关系</h3>
+        <p class="stat-number" id="relationship-count">加载中...</p>
+    </div>
+
+    <div class="card">
+        <div class="card-icon">🌍</div>
+        <h3>栖息地</h3>
+        <p class="stat-number" id="habitat-count">加载中...</p>
+    </div>
+
+    <div class="card">
+        <div class="card-icon">📊</div>
+        <h3>观测记录</h3>
+        <p class="stat-number" id="observation-count">加载中...</p>
+    </div>
+</div>
+
+<div class="quick-actions">
+    <h3>快速操作</h3>
+    <div class="action-buttons">
+        <a href="/species" class="btn btn-primary">添加物种</a>
+        <a href="/relationships" class="btn btn-secondary">创建关系</a>
+        <a href="/food-chain" class="btn btn-success">查询食物链</a>
+    </div>
+</div>
+
+<script>
+// 加载统计数据
+async function loadStats() {
+    try {
+        const response = await fetch('/api/statistics');
+        const data = await response.json();
+        
+        document.getElementById('species-count').textContent = data.species_count || 0;
+        document.getElementById('relationship-count').textContent = data.relationship_count || 0;
+        document.getElementById('habitat-count').textContent = data.habitat_count || 0;
+        document.getElementById('observation-count').textContent = data.observation_count || 0;
+    } catch (error) {
+        console.error('加载统计数据失败:', error);
+    }
+}
+
+loadStats();
+</script>
+{% endblock %}

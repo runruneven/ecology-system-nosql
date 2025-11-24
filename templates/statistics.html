@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}数据统计{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>📊 数据统计与分析</h2>
+</div>
+
+<div class="stats-container">
+    <!-- 物种分类分布饼图 -->
+    <div class="chart-section">
+        <h3>物种分类分布</h3>
+        <div class="chart-wrapper">
+            <canvas id="categoryChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 地理分布柱状图 -->
+    <div class="chart-section">
+        <h3>地理分布统计</h3>
+        <div class="chart-wrapper">
+            <canvas id="distributionChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 生态关系类型占比图 -->
+    <div class="chart-section">
+        <h3>生态关系类型占比</h3>
+        <div class="chart-wrapper">
+            <canvas id="relationshipChart"></canvas>
+        </div>
+    </div>
+
+    <!-- 生态网络可视化 -->
+    <div class="chart-section full-width">
+        <h3>生态网络可视化</h3>
+        <div class="network-controls">
+            <label>节点数量限制：</label>
+            <input type="number" id="nodeLimit" value="50" min="10" max="200" step="10">
+            <button onclick="loadNetworkGraph()" class="btn-small btn-primary">刷新网络</button>
+        </div>
+        <div id="networkContainer" class="network-container"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- D3.js -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<!-- 自定义图表脚本 -->
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+    // 页面加载时初始化所有图表
+    document.addEventListener('DOMContentLoaded', function() {
+        loadCategoryChart();
+        loadDistributionChart();
+        loadRelationshipChart();
+        loadNetworkGraph();
+    });
+</script>
+{% endblock %}
+
+
+

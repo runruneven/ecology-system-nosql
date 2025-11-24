@@ -1,0 +1,17 @@
+Mongodb
+
+(base) evenyoung@EvendeMacBook-Air ~ % which mongofiles
+which mongosh
+/Users/evenyoung/Downloads/mongodb-macos-aarch64--8.0.13/bin/mongofiles
+/opt/homebrew/bin/mongosh
+
+执行：
+mkdir -p ~/mongodb-data
+mongod --dbpath ~/mongodb-data
+
+mongosh
+
+
+Neo4j:
+/opt/homebrew/bin/redis-server
+redis-cli

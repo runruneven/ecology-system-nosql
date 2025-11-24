@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}生态关系管理{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>生态关系管理</h2>
+    <button class="btn btn-primary" onclick="showAddRelModal()">+ 创建关系</button>
+</div>
+
+<!-- 关系类型筛选 -->
+<div class="filters">
+    <select id="rel-type-filter" onchange="filterRelationships()">
+        <option value="">全部关系</option>
+        <option value="PREYS_ON">捕食关系</option>
+        <option value="COMPETES_WITH">竞争关系</option>
+        <option value="SYMBIOSIS">共生关系</option>
+        <option value="PARASITISM">寄生关系</option>
+    </select>
+</div>
+
+<!-- 关系列表 -->
+<div class="relationship-list" id="relationship-list">
+    <!-- 动态加载 -->
+</div>
+
+<!-- 添加关系模态框 -->
+<div id="add-rel-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeAddRelModal()">&times;</span>
+        <h3>创建生态关系</h3>
+        
+        <form id="add-rel-form" onsubmit="addRelationship(event)">
+            <div class="form-group">
+                <label>物种 A（主体） *</label>
+                <select name="species1_id" id="species1-select" required>
+                    <option value="">请选择物种</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>关系类型 *</label>
+                <select name="type" required>
+                    <option value="PREYS_ON">捕食 (A 捕食 B)</option>
+                    <option value="COMPETES_WITH">竞争 (A 与 B 竞争)</option>
+                    <option value="SYMBIOSIS">共生 (A 与 B 共生)</option>
+                    <option value="PARASITISM">寄生 (A 寄生于 B)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>物种 B（客体） *</label>
+                <select name="species2_id" id="species2-select" required>
+                    <option value="">请选择物种</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>关系描述</label>
+                <textarea name="description" rows="2" placeholder="描述这种生态关系..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeAddRelModal()">取消</button>
+                <button type="submit" class="btn btn-primary">创建</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let allRelationships = [];
+let allSpecies = [];
+
+// 加载物种列表（用于下拉选择）
+async function loadSpeciesForSelect() {
+    try {
+        const response = await fetch('/api/species');
+        allSpecies = await response.json();
+        
+        const select1 = document.getElementById('species1-select');
+        const select2 = document.getElementById('species2-select');
+        
+        const options = allSpecies.map(s => 
+            `<option value="${s._id}">${s.name} (${s.category})</option>`
+        ).join('');
+        
+        select1.innerHTML = '<option value="">请选择物种</option>' + options;
+        select2.innerHTML = '<option value="">请选择物种</option>' + options;
+    } catch (error) {
+        console.error('加载物种失败:', error);
+    }
+}
+
+// 加载关系列表
+async function loadRelationships() {
+    try {
+        const response = await fetch('/api/relationships');
+        allRelationships = await response.json();
+        displayRelationships(allRelationships);
+    } catch (error) {
+        console.error('加载失败:', error);
+    }
+}
+
+// 显示关系
+function displayRelationships(relationships) {
+    const container = document.getElementById('relationship-list');
+    
+    if (relationships.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无生态关系数据</p>';
+        return;
+    }
+    
+    container.innerHTML = relationships.map(r => `
+        <div class="relationship-item">
+            <div class="rel-arrow">
+                <span class="species-name">${getSpeciesName(r.species1_id)}</span>
+                <span class="arrow">${getRelationArrow(r.type)}</span>
+                <span class="species-name">${getSpeciesName(r.species2_id)}</span>
+            </div>
+            <p class="rel-type">${getRelationText(r.type)}</p>
+            ${r.description ? `<p class="rel-desc">${r.description}</p>` : ''}
+            <button onclick="deleteRelationship('${r._id}')" class="btn-small btn-danger">删除</button>
+        </div>
+    `).join('');
+}
+
+function getSpeciesName(id) {
+    const species = allSpecies.find(s => s._id === id);
+    return species ? species.name : '未知物种';
+}
+
+function getRelationText(type) {
+    const texts = {
+        'PREYS_ON': '捕食关系',
+        'COMPETES_WITH': '竞争关系',
+        'SYMBIOSIS': '共生关系',
+        'PARASITISM': '寄生关系'
+    };
+    return texts[type] || type;
+}
+
+function getRelationArrow(type) {
+    return type === 'SYMBIOSIS' ? '↔️' : '→';
+}
+
+function filterRelationships() {
+    const type = document.getElementById('rel-type-filter').value;
+    const filtered = type ? 
+        allRelationships.filter(r => r.type === type) : 
+        allRelationships;
+    displayRelationships(filtered);
+}
+
+function showAddRelModal() {
+    loadSpeciesForSelect();
+    document.getElementById('add-rel-modal').style.display = 'block';
+}
+
+function closeAddRelModal() {
+    document.getElementById('add-rel-modal').style.display = 'none';
+    document.getElementById('add-rel-form').reset();
+}
+
+async function addRelationship(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData);
+    
+    try {
+        const response = await fetch('/api/relationship', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('创建成功！');
+            closeAddRelModal();
+            loadRelationships();
+        }
+    } catch (error) {
+        console.error('创建失败:', error);
+        alert('创建失败');
+    }
+}
+
+async function deleteRelationship(id) {
+    if (!confirm('确定删除此关系吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/relationship/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('删除成功');
+            loadRelationships();
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+    }
+}
+
+loadSpeciesForSelect();
+loadRelationships();
+</script>
+{% endblock %}

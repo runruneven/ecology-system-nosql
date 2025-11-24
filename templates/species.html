@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}物种管理{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>物种管理</h2>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 添加物种</button>
+</div>
+
+<!-- 筛选器 -->
+<div class="filters">
+    <select id="category-filter" onchange="filterSpecies()">
+        <option value="">全部类别</option>
+        <option value="哺乳动物">哺乳动物</option>
+        <option value="鸟类">鸟类</option>
+        <option value="爬行动物">爬行动物</option>
+        <option value="两栖动物">两栖动物</option>
+        <option value="鱼类">鱼类</option>
+        <option value="植物">植物</option>
+        <option value="昆虫">昆虫</option>
+    </select>
+
+    <input type="text" id="search-input" placeholder="搜索物种名称..." onkeyup="searchSpecies()">
+</div>
+
+<!-- 物种列表 -->
+<div class="species-grid" id="species-list">
+    <!-- 动态加载 -->
+</div>
+
+<!-- 添加物种模态框 -->
+<div id="add-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeAddModal()">&times;</span>
+        <h3>添加新物种</h3>
+        
+        <form id="add-species-form" onsubmit="addSpecies(event)">
+            <div class="form-group">
+                <label>物种名称 *</label>
+                <input type="text" name="name" required placeholder="例如: 东北虎">
+            </div>
+
+            <div class="form-group">
+                <label>类别 *</label>
+                <select name="category" required>
+                    <option value="">请选择</option>
+                    <option value="哺乳动物">哺乳动物</option>
+                    <option value="鸟类">鸟类</option>
+                    <option value="爬行动物">爬行动物</option>
+                    <option value="两栖动物">两栖动物</option>
+                    <option value="鱼类">鱼类</option>
+                    <option value="植物">植物</option>
+                    <option value="昆虫">昆虫</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>食性</label>
+                <select name="diet">
+                    <option value="">请选择</option>
+                    <option value="肉食">肉食</option>
+                    <option value="草食">草食</option>
+                    <option value="杂食">杂食</option>
+                    <option value="自养">自养（植物）</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>栖息地</label>
+                <input type="text" name="habitat" placeholder="例如: 温带森林">
+            </div>
+
+            <div class="form-group">
+                <label>保护等级</label>
+                <select name="protection_level">
+                    <option value="">无</option>
+                    <option value="国家一级">国家一级保护</option>
+                    <option value="国家二级">国家二级保护</option>
+                    <option value="濒危">濒危物种</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>描述</label>
+                <textarea name="description" rows="3" placeholder="物种简介..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let allSpecies = [];
+
+// 加载物种列表
+async function loadSpecies() {
+    try {
+        const response = await fetch('/api/species');
+        allSpecies = await response.json();
+        displaySpecies(allSpecies);
+    } catch (error) {
+        console.error('加载失败:', error);
+        alert('加载物种数据失败');
+    }
+}
+
+// 显示物种
+function displaySpecies(species) {
+    const container = document.getElementById('species-list');
+    
+    if (species.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无数据</p>';
+        return;
+    }
+    
+    container.innerHTML = species.map(s => `
+        <div class="species-card">
+            <div class="species-icon">${getSpeciesIcon(s.category)}</div>
+            <h4>${s.name}</h4>
+            <p class="category">${s.category}</p>
+            <p class="diet">${s.diet || '未知'}</p>
+            <p class="habitat">📍 ${s.habitat || '未知'}</p>
+            ${s.protection_level ? `<span class="badge badge-danger">${s.protection_level}</span>` : ''}
+            <div class="card-actions">
+                <button onclick="viewSpecies('${s._id}')" class="btn-small">详情</button>
+                <button onclick="deleteSpecies('${s._id}')" class="btn-small btn-danger">删除</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 获取物种图标
+function getSpeciesIcon(category) {
+    const icons = {
+        '哺乳动物': '🦁',
+        '鸟类': '🦅',
+        '爬行动物': '🦎',
+        '两栖动物': '🐸',
+        '鱼类': '🐟',
+        '植物': '🌿',
+        '昆虫': '🦋'
+    };
+    return icons[category] || '🔬';
+}
+
+// 筛选物种
+function filterSpecies() {
+    const category = document.getElementById('category-filter').value;
+    const filtered = category ? 
+        allSpecies.filter(s => s.category === category) : 
+        allSpecies;
+    displaySpecies(filtered);
+}
+
+// 搜索物种
+function searchSpecies() {
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allSpecies.filter(s => 
+        s.name.toLowerCase().includes(keyword)
+    );
+    displaySpecies(filtered);
+}
+
+// 显示添加模态框
+function showAddModal() {
+    document.getElementById('add-modal').style.display = 'block';
+}
+
+// 关闭模态框
+function closeAddModal() {
+    document.getElementById('add-modal').style.display = 'none';
+    document.getElementById('add-species-form').reset();
+}
+
+// 添加物种
+async function addSpecies(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData);
+    
+    try {
+        const response = await fetch('/api/species', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('添加成功！');
+            closeAddModal();
+            loadSpecies();
+        }
+    } catch (error) {
+        console.error('添加失败:', error);
+        alert('添加失败，请重试');
+    }
+}
+
+// 查看详情
+function viewSpecies(id) {
+    window.location.href = `/species/${id}`;
+}
+
+// 删除物种
+async function deleteSpecies(id) {
+    if (!confirm('确定要删除这个物种吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/species/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            alert('删除成功');
+            loadSpecies();
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+        alert('删除失败');
+    }
+}
+
+// 页面加载时
+loadSpecies();
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    const modal = document.getElementById('add-modal');
+    if (event.target == modal) {
+        closeAddModal();
+    }
+}
+</script>
+{% endblock %}

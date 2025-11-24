@@ -1,0 +1,24 @@
+nosql-prj/
+├── src/
+│   ├── __init__.py
+│   ├── config.py              # 配置文件（数据库连接参数）
+│   ├── db_manager.py          # 统一的数据库管理类
+│   ├── models/                # 数据模型层
+│   │   ├── __init__.py
+│   │   ├── species.py         # 物种相关操作
+│   │   ├── relationship.py    # 生态关系操作
+│   │   ├── habitat.py         # 栖息地操作
+│   │   └── observation.py     # 观测记录操作
+│   ├── utils/                 # 工具函数
+│   │   ├── __init__.py
+│   │   └── serializers.py     # JSON序列化工具
+│   └── app.py                 # Flask Web应用
+├── templates/                 # HTML模板
+│   ├── index.html
+│   ├── species.html
+│   └── relationship.html
+├── static/                    # 静态资源
+│   ├── css/
+│   └── js/
+├── requirements.txt
+└── run.py                     # 启动脚本
