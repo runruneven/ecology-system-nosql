@@ -284,5 +284,3 @@ class NetworkAnalysis:
             
             return None
 
-
-

@@ -310,5 +310,3 @@ class SpeciesAnalysis:
             for item in result
         ]
 
-
-

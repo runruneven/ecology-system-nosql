@@ -1,0 +1,642 @@
+{% extends "base.html" %}
+
+{% block title %}搜索系统{% endblock %}
+
+{% block content %}
+<div class="search-page">
+    <div class="search-header">
+        <h2>🔍 生态数据搜索</h2>
+        <p class="subtitle">搜索物种、栖息地、观测记录</p>
+    </div>
+
+    <!-- 搜索框 -->
+    <div class="search-box">
+        <form id="search-form" onsubmit="performSearch(event)">
+            <div class="search-input-group">
+                <input 
+                    type="text" 
+                    id="search-input" 
+                    name="q" 
+                    placeholder="输入关键词搜索（如：东北虎、吉林省、温带森林）"
+                    autocomplete="off"
+                    required
+                >
+                <select id="category-select" name="category">
+                    <option value="">全部类别</option>
+                    <option value="物种">物种</option>
+                    <option value="栖息地">栖息地</option>
+                    <option value="观测记录">观测记录</option>
+                </select>
+                <button type="submit" class="btn btn-primary">搜索</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 热门搜索 -->
+    <div class="popular-searches">
+        <h4>🔥 热门搜索</h4>
+        <div id="popular-tags">
+            <!-- 动态加载 -->
+        </div>
+    </div>
+
+    <!-- 搜索结果 -->
+    <div id="search-results" style="display: none;">
+        <div class="results-header">
+            <h3 id="results-title">搜索结果</h3>
+            <span id="results-count" class="results-count"></span>
+        </div>
+
+        <!-- 结果统计 -->
+        <div class="results-tabs">
+            <button class="tab active" onclick="showTab('all')">
+                全部 (<span id="count-all">0</span>)
+            </button>
+            <button class="tab" onclick="showTab('species')">
+                物种 (<span id="count-species">0</span>)
+            </button>
+            <button class="tab" onclick="showTab('habitats')">
+                栖息地 (<span id="count-habitats">0</span>)
+            </button>
+            <button class="tab" onclick="showTab('observations')">
+                观测记录 (<span id="count-observations">0</span>)
+            </button>
+        </div>
+
+        <!-- 物种结果 -->
+        <div id="results-species" class="results-section">
+            <h4>🦁 物种</h4>
+            <div id="species-list" class="result-list"></div>
+        </div>
+
+        <!-- 栖息地结果 -->
+        <div id="results-habitats" class="results-section">
+            <h4>🌍 栖息地</h4>
+            <div id="habitats-list" class="result-list"></div>
+        </div>
+
+        <!-- 观测记录结果 -->
+        <div id="results-observations" class="results-section">
+            <h4>📝 观测记录</h4>
+            <div id="observations-list" class="result-list"></div>
+        </div>
+
+        <!-- 相关推荐 -->
+        <div id="recommendations-section" style="display: none;">
+            <h3>💡 相关推荐</h3>
+            <div id="recommendations-content"></div>
+        </div>
+    </div>
+
+    <!-- 无结果提示 -->
+    <div id="no-results" style="display: none;">
+        <div class="no-results">
+            <p>😕 未找到相关结果</p>
+            <p>建议：</p>
+            <ul>
+                <li>检查拼写是否正确</li>
+                <li>尝试使用更通用的关键词</li>
+                <li>使用不同的搜索词组合</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentTab = 'all';
+let searchResults = {};
+let currentKeyword = '';
+
+// 页面加载时获取热门搜索
+window.onload = function() {
+    loadPopularSearches();
+};
+
+// 加载热门搜索词
+async function loadPopularSearches() {
+    try {
+        const response = await fetch('/api/search/popular?limit=10');
+        const data = await response.json();
+        
+        if (data.success && data.popular_searches.length > 0) {
+            const tagsContainer = document.getElementById('popular-tags');
+            tagsContainer.innerHTML = data.popular_searches.map(item => 
+                `<span class="tag" onclick="searchByTag('${item.keyword}')">
+                    ${item.keyword} (${item.count})
+                </span>`
+            ).join('');
+        } else {
+            document.getElementById('popular-tags').innerHTML = 
+                '<span class="no-data">暂无热门搜索</span>';
+        }
+    } catch (error) {
+        console.error('加载热门搜索失败:', error);
+    }
+}
+
+// 点击热门标签搜索
+function searchByTag(keyword) {
+    document.getElementById('search-input').value = keyword;
+    performSearch(new Event('submit'));
+}
+
+// 执行搜索
+async function performSearch(event) {
+    if (event) event.preventDefault();
+    
+    const keyword = document.getElementById('search-input').value.trim();
+    const category = document.getElementById('category-select').value;
+    
+    if (!keyword) {
+        alert('请输入搜索关键词');
+        return;
+    }
+    
+    currentKeyword = keyword;
+    
+    // 显示加载状态
+    document.getElementById('search-results').style.display = 'block';
+    document.getElementById('no-results').style.display = 'none';
+    document.getElementById('results-title').textContent = `"${keyword}" 的搜索结果`;
+    
+    try {
+        const response = await fetch(
+            `/api/search?q=${encodeURIComponent(keyword)}&category=${category}`
+        );
+        const data = await response.json();
+        
+        if (data.success) {
+            searchResults = data.results;
+            displayResults(searchResults);
+            
+            // 加载推荐
+            loadRecommendations(keyword);
+            
+            // 刷新热门搜索
+            loadPopularSearches();
+        } else {
+            showNoResults();
+        }
+        
+    } catch (error) {
+        console.error('搜索失败:', error);
+        alert('搜索失败，请重试');
+    }
+}
+
+// 显示搜索结果
+function displayResults(results) {
+    const total = results.total || 0;
+    
+    if (total === 0) {
+        showNoResults();
+        return;
+    }
+    
+    // 更新统计
+    document.getElementById('results-count').textContent = `找到 ${total} 条结果`;
+    document.getElementById('count-all').textContent = total;
+    document.getElementById('count-species').textContent = results.species.length;
+    document.getElementById('count-habitats').textContent = results.habitats.length;
+    document.getElementById('count-observations').textContent = results.observations.length;
+    
+    // 显示各类结果
+    displaySpeciesResults(results.species);
+    displayHabitatResults(results.habitats);
+    displayObservationResults(results.observations);
+    
+    // 显示全部结果
+    showTab('all');
+}
+
+// 显示物种结果
+function displaySpeciesResults(species) {
+    const container = document.getElementById('species-list');
+    
+    if (species.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无物种结果</p>';
+        return;
+    }
+    
+    // 按评分排序
+    species.sort((a, b) => (b.result_score || 0) - (a.result_score || 0));
+    
+    container.innerHTML = species.map(s => `
+        <div class="result-card">
+            <div class="result-icon">🦁</div>
+            <div class="result-content">
+                <h4>${highlightKeyword(s.name, currentKeyword)}</h4>
+                <p class="result-meta">
+                    <span class="badge">${s.category}</span>
+                    ${s.protection_level ? `<span class="badge badge-danger">${s.protection_level}</span>` : ''}
+                </p>
+                ${s.scientific_name ? `<p class="scientific-name">${s.scientific_name}</p>` : ''}
+                ${s.habitat ? `<p>🏞️ 栖息地: ${s.habitat}</p>` : ''}
+                ${s.description ? `<p class="description">${truncate(s.description, 100)}</p>` : ''}
+                <div class="result-actions">
+                    <a href="/species/${s._id}" class="btn-small">查看详情</a>
+                    <span class="score">相关度: ${s.result_score || 0}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 显示栖息地结果
+function displayHabitatResults(habitats) {
+    const container = document.getElementById('habitats-list');
+    
+    if (habitats.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无栖息地结果</p>';
+        return;
+    }
+    
+    habitats.sort((a, b) => (b.result_score || 0) - (a.result_score || 0));
+    
+    container.innerHTML = habitats.map(h => `
+        <div class="result-card">
+            <div class="result-icon">🌍</div>
+            <div class="result-content">
+                <h4>${highlightKeyword(h.name, currentKeyword)}</h4>
+                <p class="result-meta">
+                    <span class="badge">${h.protection_level || '未分级'}</span>
+                </p>
+                <p>📍 ${h.location?.province || ''} ${h.location?.city || ''}</p>
+                ${h.area ? `<p>📏 面积: ${h.area}</p>` : ''}
+                ${h.description ? `<p class="description">${truncate(h.description, 100)}</p>` : ''}
+                <div class="result-actions">
+                    <span class="score">相关度: ${h.result_score || 0}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 显示观测记录结果
+function displayObservationResults(observations) {
+    const container = document.getElementById('observations-list');
+    
+    if (observations.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无观测记录结果</p>';
+        return;
+    }
+    
+    observations.sort((a, b) => (b.result_score || 0) - (a.result_score || 0));
+    
+    container.innerHTML = observations.map(o => `
+        <div class="result-card">
+            <div class="result-icon">📝</div>
+            <div class="result-content">
+                <h4>${highlightKeyword(o.species_name, currentKeyword)}</h4>
+                <p class="result-meta">
+                    ${o.verified ? '<span class="badge badge-success">✓ 已验证</span>' : '<span class="badge badge-warning">待验证</span>'}
+                </p>
+                <p>👤 观测者: ${o.observer?.name} (${o.observer?.type})</p>
+                <p>📅 日期: ${o.observation?.date}</p>
+                <p>📍 地点: ${o.observation?.location?.province || ''} ${o.observation?.location?.city || ''}</p>
+                ${o.observation?.behavior ? `<p>🐾 行为: ${o.observation.behavior}</p>` : ''}
+                <div class="result-actions">
+                    <span class="score">相关度: ${o.result_score || 0}</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 加载推荐内容
+async function loadRecommendations(keyword) {
+    try {
+        const response = await fetch(
+            `/api/search/recommendations?keyword=${encodeURIComponent(keyword)}`
+        );
+        const data = await response.json();
+        
+        if (data.success) {
+            displayRecommendations(data.recommendations);
+        }
+    } catch (error) {
+        console.error('加载推荐失败:', error);
+    }
+}
+
+// 显示推荐内容
+function displayRecommendations(recommendations) {
+    const hasRecommendations = 
+        recommendations.related_species.length > 0 || 
+        recommendations.related_habitats.length > 0;
+    
+    if (!hasRecommendations) {
+        document.getElementById('recommendations-section').style.display = 'none';
+        return;
+    }
+    
+    let html = '';
+    
+    if (recommendations.related_species.length > 0) {
+        html += `
+            <div class="recommendation-group">
+                <h4>相关物种</h4>
+                <div class="recommendation-list">
+                    ${recommendations.related_species.map(s => `
+                        <div class="recommendation-item">
+                            <span class="rec-icon">🦁</span>
+                            <span class="rec-name">${s.name}</span>
+                            <span class="rec-meta">${s.category}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    if (recommendations.related_habitats.length > 0) {
+        html += `
+            <div class="recommendation-group">
+                <h4>相关栖息地</h4>
+                <div class="recommendation-list">
+                    ${recommendations.related_habitats.map(h => `
+                        <div class="recommendation-item">
+                            <span class="rec-icon">🌍</span>
+                            <span class="rec-name">${h.name}</span>
+                            <span class="rec-meta">${h.location?.province || ''}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+    
+    document.getElementById('recommendations-content').innerHTML = html;
+    document.getElementById('recommendations-section').style.display = 'block';
+}
+
+// 显示无结果
+function showNoResults() {
+    document.getElementById('search-results').style.display = 'none';
+    document.getElementById('no-results').style.display = 'block';
+}
+
+// 切换标签页
+function showTab(tab) {
+    currentTab = tab;
+    
+    // 更新标签激活状态
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    
+    // 显示/隐藏对应内容
+    if (tab === 'all') {
+        document.getElementById('results-species').style.display = 'block';
+        document.getElementById('results-habitats').style.display = 'block';
+        document.getElementById('results-observations').style.display = 'block';
+    } else if (tab === 'species') {
+        document.getElementById('results-species').style.display = 'block';
+        document.getElementById('results-habitats').style.display = 'none';
+        document.getElementById('results-observations').style.display = 'none';
+    } else if (tab === 'habitats') {
+        document.getElementById('results-species').style.display = 'none';
+        document.getElementById('results-habitats').style.display = 'block';
+        document.getElementById('results-observations').style.display = 'none';
+    } else if (tab === 'observations') {
+        document.getElementById('results-species').style.display = 'none';
+        document.getElementById('results-habitats').style.display = 'none';
+        document.getElementById('results-observations').style.display = 'block';
+    }
+}
+
+// 高亮关键词
+function highlightKeyword(text, keyword) {
+    if (!text || !keyword) return text;
+    const regex = new RegExp(`(${keyword})`, 'gi');
+    return text.replace(regex, '<mark>$1</mark>');
+}
+
+// 截断文本
+function truncate(text, length) {
+    if (!text) return '';
+    return text.length > length ? text.substring(0, length) + '...' : text;
+}
+</script>
+
+<style>
+.search-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.search-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.search-box {
+    margin-bottom: 30px;
+}
+
+.search-input-group {
+    display: flex;
+    gap: 10px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+#search-input {
+    flex: 1;
+    padding: 15px 20px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+}
+
+#category-select {
+    padding: 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    min-width: 150px;
+}
+
+.popular-searches {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+#popular-tags {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 15px;
+}
+
+.tag {
+    background: #f0f0f0;
+    padding: 8px 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 14px;
+}
+
+.tag:hover {
+    background: #2196F3;
+    color: white;
+}
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.results-count {
+    color: #666;
+    font-size: 14px;
+}
+
+.results-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #eee;
+}
+
+.tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s;
+    border-bottom: 3px solid transparent;
+}
+
+.tab.active {
+    border-bottom-color: #2196F3;
+    color: #2196F3;
+    font-weight: bold;
+}
+
+.results-section {
+    margin-bottom: 40px;
+}
+
+.result-list {
+    display: grid;
+    gap: 20px;
+}
+
+.result-card {
+    display: flex;
+    gap: 15px;
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: all 0.3s;
+}
+
+.result-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.result-icon {
+    font-size: 40px;
+    flex-shrink: 0;
+}
+
+.result-content {
+    flex: 1;
+}
+
+.result-content h4 {
+    margin: 0 0 10px 0;
+}
+
+.result-meta {
+    margin: 10px 0;
+}
+
+.scientific-name {
+    font-style: italic;
+    color: #666;
+    font-size: 0.9em;
+}
+
+.description {
+    color: #555;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.result-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+}
+
+.score {
+    font-size: 0.85em;
+    color: #999;
+}
+
+mark {
+    background-color: #ffeb3b;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+.no-results {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+
+.no-results ul {
+    text-align: left;
+    display: inline-block;
+    margin-top: 20px;
+}
+
+#recommendations-section {
+    margin-top: 40px;
+    padding-top: 30px;
+    border-top: 2px solid #eee;
+}
+
+.recommendation-group {
+    margin-bottom: 30px;
+}
+
+.recommendation-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.recommendation-item {
+    background: #f9f9f9;
+    padding: 15px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.rec-icon {
+    font-size: 24px;
+}
+
+.rec-name {
+    font-weight: bold;
+    flex: 1;
+}
+
+.rec-meta {
+    font-size: 0.85em;
+    color: #666;
+}
+</style>
+{% endblock %}

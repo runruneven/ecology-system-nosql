@@ -1,243 +1,102 @@
 # src/models/observation.py
-"""观测记录相关的数据库操作"""
+"""观测记录系统相关的数据库操作"""
 
-import json
-import time
 from datetime import datetime
+from bson import ObjectId
 from ..db_manager import db_manager
 from ..utils.serializers import serialize_doc
-from ..config import CACHE_EXPIRY
 
 
 class ObservationModel:
     """观测记录数据模型"""
     
-    # Redis Stream 键名
-    STREAM_KEY = 'observations:stream'
-    
     def __init__(self):
-        self.db = db_manager.mongo
         self.mongo_col = db_manager.mongo['observations']
         self.redis = db_manager.redis
+        self.species_col = db_manager.mongo['species']
     
-    def add_observation(self, species_id, observer_info, observation_data, **extra_fields):
+    def add_observation(self, species_id, observer_name, observer_type, 
+                       observation_date, location, count=1, behavior=None, 
+                       photo_url=None, notes=None):
         """
         添加观测记录
         
         Args:
             species_id: 物种ID
-            observer_info: 观测者信息（字典，包含 name 和 type）
-            observation_data: 观测数据（字典，包含 date, location, count, behavior 等）
-            **extra_fields: 额外字段
+            observer_name: 观测者姓名
+            observer_type: 观测者类型（科研人员/公众）
+            observation_date: 观测日期（字符串，如 "2024-11-26"）
+            location: 地理位置 {"province": "吉林省", "city": "长春市", "coordinates": {...}}
+            count: 观测到的数量（默认1）
+            behavior: 观测到的行为（如：觅食、迁徙、繁殖）
+            photo_url: 照片URL（可选）
+            notes: 备注信息
         
         Returns:
-            观测记录ID
+            str: 观测记录ID
         """
-        from bson import ObjectId
-        
-        # 1. 获取物种名称（用于显示）
-        species = self.db.species.find_one({'_id': ObjectId(species_id)})
-        species_name = species.get('name', '未知物种') if species else '未知物种'
+        # 1. 获取物种信息（用于冗余存储，方便查询）
+        species = self.species_col.find_one({'_id': ObjectId(species_id)})
+        species_name = species['name'] if species else '未知物种'
         
         # 2. 构建观测记录文档
         obs_doc = {
-            "species_id": ObjectId(species_id) if isinstance(species_id, str) else species_id,
-            "species_name": species_name,
-            "observer": observer_info,
-            "observation": observation_data,
-            "verified": False,
-            "verified_by": None,
-            "verified_at": None,
+            "species_id": species_id,
+            "species_name": species_name,  # 冗余字段，避免每次都要关联查询
+            
+            # 观测者信息
+            "observer": {
+                "name": observer_name,
+                "type": observer_type  # "科研人员" 或 "公众"
+            },
+            
+            # 观测数据
+            "observation": {
+                "date": observation_date,
+                "location": location,
+                "count": count,
+                "behavior": behavior or "",
+                "photo_url": photo_url or "",
+                "notes": notes or ""
+            },
+            
+            # 验证状态
+            "verified": False,  # 是否已验证
+            "verifier": None,   # 验证者姓名
+            "verified_at": None,  # 验证时间
+            
+            # 时间戳
             "created_at": datetime.now(),
-            **extra_fields
+            "updated_at": datetime.now()
         }
         
-        # 3. MongoDB 插入完整记录
+        # 3. MongoDB 存储（永久保存）
         result = self.mongo_col.insert_one(obs_doc)
         obs_id = str(result.inserted_id)
         
-        # 4. Redis Stream 添加实时数据流
-        stream_data = {
-            'obs_id': obs_id,
-            'species_id': species_id,
-            'species_name': species_name,
-            'observer_name': observer_info.get('name', ''),
-            'observer_type': observer_info.get('type', ''),
-            'date': observation_data.get('date', ''),
-            'location_province': observation_data.get('location', {}).get('province', ''),
-            'count': str(observation_data.get('count', 0)),
-            'behavior': observation_data.get('behavior', ''),
-            'verified': 'false',
-            'timestamp': str(int(time.time() * 1000))  # 毫秒时间戳
-        }
-        
-        # 添加到 Redis Stream（自动生成ID）
-        self.redis.xadd(self.STREAM_KEY, stream_data)
-        
-        return obs_id
-    
-    def list_observations(self, filters=None, limit=50):
-        """
-        列出观测记录（支持多维度筛选）
-        
-        Args:
-            filters: 筛选条件字典，支持：
-                - species_id: 按物种ID筛选
-                - species_name: 按物种名称筛选
-                - observer_type: 按观测者类型筛选
-                - date_from: 开始日期（字符串，格式：YYYY-MM-DD）
-                - date_to: 结束日期（字符串，格式：YYYY-MM-DD）
-                - location_province: 按省份筛选
-                - verified: 是否已验证（布尔值）
-            limit: 返回数量限制
-        
-        Returns:
-            观测记录列表
-        """
-        from bson import ObjectId
-        
-        # 构建查询条件
-        query = {}
-        
-        if filters:
-            # 按物种ID筛选
-            if 'species_id' in filters:
-                query['species_id'] = ObjectId(filters['species_id'])
-            
-            # 按物种名称筛选
-            if 'species_name' in filters:
-                query['species_name'] = {'$regex': filters['species_name'], '$options': 'i'}
-            
-            # 按观测者类型筛选
-            if 'observer_type' in filters:
-                query['observer.type'] = filters['observer_type']
-            
-            # 按日期范围筛选（observation.date 是字符串格式 "YYYY-MM-DD"）
-            if 'date_from' in filters or 'date_to' in filters:
-                date_query = {}
-                if 'date_from' in filters:
-                    date_query['$gte'] = filters['date_from']  # 字符串比较，格式：YYYY-MM-DD
-                if 'date_to' in filters:
-                    date_query['$lte'] = filters['date_to']  # 字符串比较
-                if date_query:
-                    query['observation.date'] = date_query
-            
-            # 按省份筛选
-            if 'location_province' in filters:
-                query['observation.location.province'] = filters['location_province']
-            
-            # 按验证状态筛选
-            if 'verified' in filters:
-                query['verified'] = filters['verified']
-        
-        # 查询并排序（最新的在前）
-        observations = list(
-            self.mongo_col.find(query)
-            .sort('created_at', -1)
-            .limit(limit)
-        )
-        
-        return [serialize_doc(obs) for obs in observations]
-    
-    def verify_observation(self, obs_id, verifier_name):
-        """
-        标记观测记录为已验证
-        
-        Args:
-            obs_id: 观测记录ID
-            verifier_name: 验证者姓名
-        
-        Returns:
-            更新是否成功（布尔值）
-        """
-        from bson import ObjectId
-        from datetime import datetime
-        
-        # 1. 更新 MongoDB 记录
-        result = self.mongo_col.update_one(
-            {'_id': ObjectId(obs_id)},
-            {
-                '$set': {
-                    'verified': True,
-                    'verified_by': verifier_name,
-                    'verified_at': datetime.now()
-                }
-            }
-        )
-        
-        if result.matched_count == 0:
-            return False
-        
-        # 2. 更新 Redis Stream 中对应的消息（通过添加新消息标记验证状态）
-        # 注意：Redis Stream 中的消息是不可变的，我们只能添加新的验证消息
-        verification_data = {
-            'obs_id': obs_id,
-            'action': 'verified',
-            'verifier_name': verifier_name,
-            'verified_at': datetime.now().isoformat(),
-            'timestamp': str(int(time.time() * 1000))
-        }
-        self.redis.xadd('observations:verifications', verification_data)
-        
-        return True
-    
-    def get_recent_observations_stream(self, count=10, start_id=None):
-        """
-        使用 Redis Stream 获取最近的观测数据流
-        
-        Args:
-            count: 返回的消息数量
-            start_id: 起始消息ID（可选，用于分页）
-        
-        Returns:
-            观测数据流列表
-        """
-        messages = []
-        
+        # 4. Redis Stream 实时推送 ⭐ 核心功能
         try:
-            if start_id:
-                # 从指定ID开始读取
-                stream_messages = self.redis.xread(
-                    {self.STREAM_KEY: start_id},
-                    count=count,
-                    block=0  # 非阻塞模式
-                )
-            else:
-                # 读取最新的消息
-                stream_messages = self.redis.xread(
-                    {self.STREAM_KEY: '$'},  # '$' 表示只读取新消息
-                    count=count,
-                    block=0
-                )
+            stream_data = {
+                "obs_id": obs_id,
+                "species_id": species_id,
+                "species_name": species_name,
+                "observer_type": observer_type,
+                "location_province": location.get('province', ''),
+                "count": str(count),
+                "timestamp": datetime.now().isoformat()
+            }
             
-            # 如果没有新消息，尝试读取最新的几条
-            if not stream_messages:
-                # 使用 XREVRANGE 获取最新的消息
-                latest_messages = self.redis.xrevrange(self.STREAM_KEY, count=count)
-                
-                for msg_id, data in latest_messages:
-                    messages.append({
-                        'id': msg_id.decode() if isinstance(msg_id, bytes) else msg_id,
-                        'data': {k.decode() if isinstance(k, bytes) else k: 
-                                v.decode() if isinstance(v, bytes) else v 
-                                for k, v in data.items()}
-                    })
-            else:
-                # 解析流消息
-                for stream_name, msgs in stream_messages:
-                    for msg_id, data in msgs:
-                        messages.append({
-                            'id': msg_id.decode() if isinstance(msg_id, bytes) else msg_id,
-                            'data': {k.decode() if isinstance(k, bytes) else k: 
-                                    v.decode() if isinstance(v, bytes) else v 
-                                    for k, v in data.items()}
-                        })
-        
+            # xadd 是 Redis Stream 的添加命令
+            # 'observations:stream' 是 Stream 的名字
+            self.redis.xadd('observations:stream', stream_data)
+            print(f"✅ 观测记录已推送到实时数据流")
+            
         except Exception as e:
-            print(f"读取 Redis Stream 时出错: {e}")
-            # 如果 Stream 不存在或出错，返回空列表
+            print(f"⚠️ Redis Stream 推送失败: {e}")
+            # 即使 Stream 失败，MongoDB 数据已保存，不影响主流程
         
-        return messages
+        print(f"✅ 观测记录 '{species_name}' 添加成功")
+        return obs_id
     
     def get_observation(self, obs_id):
         """
@@ -247,43 +106,205 @@ class ObservationModel:
             obs_id: 观测记录ID
         
         Returns:
-            观测记录数据字典，如果不存在则返回 None
+            dict: 观测记录信息
         """
-        from bson import ObjectId
+        obs = self.mongo_col.find_one({'_id': ObjectId(obs_id)})
         
-        observation = self.mongo_col.find_one({'_id': ObjectId(obs_id)})
-        
-        if observation:
-            return serialize_doc(observation)
-        
+        if obs:
+            return serialize_doc(obs)
         return None
     
-    def count_observations(self, filters=None):
+    def list_observations(self, species_id=None, province=None, 
+                         verified=None, observer_type=None,
+                         start_date=None, end_date=None, 
+                         limit=50):
+        """
+        列出观测记录（支持多维度筛选）
+        
+        Args:
+            species_id: 按物种筛选
+            province: 按省份筛选
+            verified: 按验证状态筛选（True/False/None）
+            observer_type: 按观测者类型筛选
+            start_date: 开始日期（字符串）
+            end_date: 结束日期（字符串）
+            limit: 返回数量限制
+        
+        Returns:
+            list: 观测记录列表
+        """
+        query = {}
+        
+        # 构建查询条件
+        if species_id:
+            query['species_id'] = species_id
+        
+        if province:
+            query['observation.location.province'] = {"$regex": province, "$options": "i"}
+        
+        if verified is not None:
+            query['verified'] = verified
+        
+        if observer_type:
+            query['observer.type'] = observer_type
+        
+        if start_date or end_date:
+            date_query = {}
+            if start_date:
+                date_query['$gte'] = start_date
+            if end_date:
+                date_query['$lte'] = end_date
+            query['observation.date'] = date_query
+        
+        # 按时间倒序排列（最新的在前）
+        observations = list(
+            self.mongo_col.find(query)
+            .sort('created_at', -1)
+            .limit(limit)
+        )
+        
+        return [serialize_doc(o) for o in observations]
+    
+    def verify_observation(self, obs_id, verifier_name):
+        """
+        验证观测记录（专家审核）
+        
+        Args:
+            obs_id: 观测记录ID
+            verifier_name: 验证者姓名
+        
+        Returns:
+            bool: 验证是否成功
+        """
+        result = self.mongo_col.update_one(
+            {'_id': ObjectId(obs_id)},
+            {
+                '$set': {
+                    'verified': True,
+                    'verifier': verifier_name,
+                    'verified_at': datetime.now(),
+                    'updated_at': datetime.now()
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            print(f"✅ 观测记录 {obs_id} 已验证")
+            return True
+        return False
+    
+    def update_observation(self, obs_id, update_data):
+        """
+        更新观测记录
+        
+        Args:
+            obs_id: 观测记录ID
+            update_data: 要更新的数据
+        
+        Returns:
+            bool: 更新是否成功
+        """
+        update_data['updated_at'] = datetime.now()
+        
+        result = self.mongo_col.update_one(
+            {'_id': ObjectId(obs_id)},
+            {'$set': update_data}
+        )
+        
+        return result.matched_count > 0
+    
+    def delete_observation(self, obs_id):
+        """
+        删除观测记录
+        
+        Args:
+            obs_id: 观测记录ID
+        
+        Returns:
+            bool: 删除是否成功
+        """
+        result = self.mongo_col.delete_one({'_id': ObjectId(obs_id)})
+        
+        if result.deleted_count > 0:
+            print(f"✅ 观测记录 {obs_id} 删除成功")
+            return True
+        return False
+    
+    def count_observations(self):
         """
         统计观测记录总数
         
+        Returns:
+            int: 观测记录数量
+        """
+        return self.mongo_col.count_documents({})
+    
+    def get_recent_stream_data(self, count=10):
+        """
+        获取 Redis Stream 中的最近数据
+        
         Args:
-            filters: 筛选条件（与 list_observations 相同）
+            count: 获取数量
         
         Returns:
-            观测记录数量
+            list: 最近的观测数据流
         """
-        from bson import ObjectId
+        try:
+            # xrevrange 获取最新的 N 条数据
+            # '+' 表示最新，'-' 表示最旧
+            # count 指定数量
+            stream_data = self.redis.xrevrange(
+                'observations:stream', 
+                '+', 
+                '-', 
+                count=count
+            )
+            
+            # 转换为可读格式
+            result = []
+            for entry_id, data in stream_data:
+                result.append({
+                    'stream_id': entry_id.decode() if isinstance(entry_id, bytes) else entry_id,
+                    'data': {k.decode() if isinstance(k, bytes) else k: 
+                            v.decode() if isinstance(v, bytes) else v 
+                            for k, v in data.items()}
+                })
+            
+            return result
+            
+        except Exception as e:
+            print(f"⚠️ 获取 Stream 数据失败: {e}")
+            return []
+    
+    def get_statistics(self):
+        """
+        获取观测记录统计信息
         
-        query = {}
+        Returns:
+            dict: 统计数据
+        """
+        pipeline = [
+            {
+                '$group': {
+                    '_id': {
+                        'species_name': '$species_name',
+                        'verified': '$verified'
+                    },
+                    'count': {'$sum': 1}
+                }
+            }
+        ]
         
-        if filters:
-            # 复用 list_observations 的查询逻辑
-            if 'species_id' in filters:
-                query['species_id'] = ObjectId(filters['species_id'])
-            if 'species_name' in filters:
-                query['species_name'] = {'$regex': filters['species_name'], '$options': 'i'}
-            if 'observer_type' in filters:
-                query['observer.type'] = filters['observer_type']
-            if 'location_province' in filters:
-                query['observation.location.province'] = filters['location_province']
-            if 'verified' in filters:
-                query['verified'] = filters['verified']
+        result = list(self.mongo_col.aggregate(pipeline))
         
-        return self.mongo_col.count_documents(query)
-
+        # 统计总数
+        total = self.mongo_col.count_documents({})
+        verified = self.mongo_col.count_documents({'verified': True})
+        unverified = self.mongo_col.count_documents({'verified': False})
+        
+        return {
+            'total': total,
+            'verified': verified,
+            'unverified': unverified,
+            'by_species': result
+        }

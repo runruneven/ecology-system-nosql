@@ -1,0 +1,470 @@
+{% extends "base.html" %}
+
+{% block title %}栖息地管理{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>🌍 栖息地管理</h2>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 添加栖息地</button>
+</div>
+
+<!-- 筛选器 -->
+<div class="filters">
+    <select id="protection-filter" onchange="filterHabitats()">
+        <option value="">全部保护等级</option>
+        <option value="国家级自然保护区">国家级自然保护区</option>
+        <option value="省级自然保护区">省级自然保护区</option>
+        <option value="市级自然保护区">市级自然保护区</option>
+        <option value="无">无保护</option>
+    </select>
+
+    <input type="text" id="search-input" placeholder="搜索栖息地名称..." onkeyup="searchHabitats()">
+</div>
+
+<!-- 栖息地列表 -->
+<div class="habitat-grid" id="habitat-list">
+    <!-- 动态加载 -->
+</div>
+
+<!-- 添加栖息地模态框 -->
+<div id="add-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeAddModal()">&times;</span>
+        <h3>添加新栖息地</h3>
+        
+        <form id="add-habitat-form" onsubmit="addHabitat(event)">
+            <div class="form-group">
+                <label>栖息地名称 *</label>
+                <input type="text" name="name" required placeholder="例如: 长白山自然保护区">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>省份 *</label>
+                    <input type="text" name="province" required placeholder="例如: 吉林省">
+                </div>
+
+                <div class="form-group">
+                    <label>面积</label>
+                    <input type="text" name="area" placeholder="例如: 196465公顷">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>纬度</label>
+                    <input type="number" step="0.0001" name="lat" placeholder="42.0">
+                </div>
+
+                <div class="form-group">
+                    <label>经度</label>
+                    <input type="number" step="0.0001" name="lng" placeholder="128.0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>气候类型</label>
+                <input type="text" name="climate" placeholder="例如: 温带大陆性气候">
+            </div>
+
+            <div class="form-group">
+                <label>植被类型</label>
+                <input type="text" name="vegetation" placeholder="例如: 针阔混交林">
+            </div>
+
+            <div class="form-group">
+                <label>海拔范围</label>
+                <input type="text" name="elevation" placeholder="例如: 500-2691米">
+            </div>
+
+            <div class="form-group">
+                <label>保护等级</label>
+                <select name="protection_level">
+                    <option value="无">无</option>
+                    <option value="国家级自然保护区">国家级自然保护区</option>
+                    <option value="省级自然保护区">省级自然保护区</option>
+                    <option value="市级自然保护区">市级自然保护区</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>描述</label>
+                <textarea name="description" rows="3" placeholder="栖息地简介..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑栖息地模态框 -->
+<div id="edit-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3>编辑栖息地信息</h3>
+        
+        <form id="edit-habitat-form" onsubmit="updateHabitat(event)">
+            <input type="hidden" id="edit-habitat-id" name="habitat_id">
+            
+            <div class="form-group">
+                <label>栖息地名称 *</label>
+                <input type="text" id="edit-name" name="name" required>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>省份 *</label>
+                    <input type="text" id="edit-province" name="province" required>
+                </div>
+
+                <div class="form-group">
+                    <label>面积</label>
+                    <input type="text" id="edit-area" name="area">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>纬度</label>
+                    <input type="number" step="0.0001" id="edit-lat" name="lat">
+                </div>
+
+                <div class="form-group">
+                    <label>经度</label>
+                    <input type="number" step="0.0001" id="edit-lng" name="lng">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>气候类型</label>
+                <input type="text" id="edit-climate" name="climate">
+            </div>
+
+            <div class="form-group">
+                <label>植被类型</label>
+                <input type="text" id="edit-vegetation" name="vegetation">
+            </div>
+
+            <div class="form-group">
+                <label>海拔范围</label>
+                <input type="text" id="edit-elevation" name="elevation">
+            </div>
+
+            <div class="form-group">
+                <label>保护等级</label>
+                <select id="edit-protection-level" name="protection_level">
+                    <option value="无">无</option>
+                    <option value="国家级自然保护区">国家级自然保护区</option>
+                    <option value="省级自然保护区">省级自然保护区</option>
+                    <option value="市级自然保护区">市级自然保护区</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>描述</label>
+                <textarea id="edit-description" name="description" rows="3"></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let allHabitats = [];
+
+// 加载栖息地列表
+async function loadHabitats() {
+    try {
+        const response = await fetch('/api/habitats');
+        allHabitats = await response.json();
+        displayHabitats(allHabitats);
+    } catch (error) {
+        console.error('加载失败:', error);
+        alert('加载栖息地数据失败');
+    }
+}
+
+// 显示栖息地
+function displayHabitats(habitats) {
+    const container = document.getElementById('habitat-list');
+    
+    if (habitats.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无栖息地数据</p>';
+        return;
+    }
+    
+    container.innerHTML = habitats.map(h => `
+        <div class="habitat-card">
+            <div class="habitat-icon">🌲</div>
+            <h4>${h.name}</h4>
+            <p class="location">📍 ${h.location?.province || '未知'}</p>
+            <p class="area">📏 ${h.area || '未知'}</p>
+            <p class="climate">🌡️ ${h.environment?.climate || '未知'}</p>
+            ${h.protection_level && h.protection_level !== '无' ? 
+                `<span class="badge badge-success">${h.protection_level}</span>` : ''}
+            <div class="card-actions">
+                <button onclick="viewHabitat('${h._id}')" class="btn-small">详情</button>
+                <button onclick="editHabitat('${h._id}')" class="btn-small btn-warning">编辑</button>
+                <button onclick="deleteHabitat('${h._id}')" class="btn-small btn-danger">删除</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// 筛选栖息地
+function filterHabitats() {
+    const protection = document.getElementById('protection-filter').value;
+    const filtered = protection ? 
+        allHabitats.filter(h => h.protection_level === protection) : 
+        allHabitats;
+    displayHabitats(filtered);
+}
+
+// 搜索栖息地
+function searchHabitats() {
+    const keyword = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allHabitats.filter(h => 
+        h.name.toLowerCase().includes(keyword)
+    );
+    displayHabitats(filtered);
+}
+
+// 显示添加模态框
+function showAddModal() {
+    document.getElementById('add-modal').style.display = 'block';
+}
+
+// 关闭添加模态框
+function closeAddModal() {
+    document.getElementById('add-modal').style.display = 'none';
+    document.getElementById('add-habitat-form').reset();
+}
+
+// 添加栖息地
+async function addHabitat(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    
+    // 构建数据结构
+    const data = {
+        name: formData.get('name'),
+        location: {
+            province: formData.get('province'),
+            coordinates: {
+                lat: parseFloat(formData.get('lat')) || null,
+                lng: parseFloat(formData.get('lng')) || null
+            }
+        },
+        environment: {
+            climate: formData.get('climate') || '',
+            vegetation: formData.get('vegetation') || '',
+            elevation: formData.get('elevation') || ''
+        },
+        protection_level: formData.get('protection_level') || '无',
+        area: formData.get('area') || '',
+        description: formData.get('description') || ''
+    };
+    
+    try {
+        const response = await fetch('/api/habitats', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('添加成功！');
+            closeAddModal();
+            loadHabitats();
+        } else {
+            alert('添加失败: ' + (result.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('添加失败:', error);
+        alert('添加失败，请重试');
+    }
+}
+
+// 编辑栖息地
+async function editHabitat(id) {
+    try {
+        const response = await fetch(`/api/habitat/${id}`);
+        const habitat = await response.json();
+        
+        if (!habitat || habitat.error) {
+            alert('获取栖息地信息失败');
+            return;
+        }
+        
+        // 填充表单
+        document.getElementById('edit-habitat-id').value = id;
+        document.getElementById('edit-name').value = habitat.name || '';
+        document.getElementById('edit-province').value = habitat.location?.province || '';
+        document.getElementById('edit-area').value = habitat.area || '';
+        document.getElementById('edit-lat').value = habitat.location?.coordinates?.lat || '';
+        document.getElementById('edit-lng').value = habitat.location?.coordinates?.lng || '';
+        document.getElementById('edit-climate').value = habitat.environment?.climate || '';
+        document.getElementById('edit-vegetation').value = habitat.environment?.vegetation || '';
+        document.getElementById('edit-elevation').value = habitat.environment?.elevation || '';
+        document.getElementById('edit-protection-level').value = habitat.protection_level || '无';
+        document.getElementById('edit-description').value = habitat.description || '';
+        
+        document.getElementById('edit-modal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('加载栖息地信息失败:', error);
+        alert('加载失败，请重试');
+    }
+}
+
+// 关闭编辑模态框
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+    document.getElementById('edit-habitat-form').reset();
+}
+
+// 更新栖息地
+async function updateHabitat(event) {
+    event.preventDefault();
+    
+    const habitatId = document.getElementById('edit-habitat-id').value;
+    const formData = new FormData(event.target);
+    
+    const data = {
+        name: formData.get('name'),
+        location: {
+            province: formData.get('province'),
+            coordinates: {
+                lat: parseFloat(formData.get('lat')) || null,
+                lng: parseFloat(formData.get('lng')) || null
+            }
+        },
+        environment: {
+            climate: formData.get('climate') || '',
+            vegetation: formData.get('vegetation') || '',
+            elevation: formData.get('elevation') || ''
+        },
+        protection_level: formData.get('protection_level') || '无',
+        area: formData.get('area') || '',
+        description: formData.get('description') || ''
+    };
+    
+    try {
+        const response = await fetch(`/api/habitat/${habitatId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('更新成功！');
+            closeEditModal();
+            loadHabitats();
+        } else {
+            alert('更新失败: ' + (result.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('更新失败:', error);
+        alert('更新失败，请重试');
+    }
+}
+
+// 查看详情
+function viewHabitat(id) {
+    window.location.href = `/habitat/${id}`;
+}
+
+// 删除栖息地
+async function deleteHabitat(id) {
+    if (!confirm('确定要删除这个栖息地吗？')) return;
+    
+    try {
+        const response = await fetch(`/api/habitat/${id}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('删除成功');
+            loadHabitats();
+        } else {
+            alert('删除失败: ' + (result.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('删除失败:', error);
+        alert('删除失败');
+    }
+}
+
+// 页面加载时
+loadHabitats();
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    const addModal = document.getElementById('add-modal');
+    const editModal = document.getElementById('edit-modal');
+    
+    if (event.target == addModal) {
+        closeAddModal();
+    }
+    if (event.target == editModal) {
+        closeEditModal();
+    }
+}
+</script>
+
+<style>
+.habitat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.habitat-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s;
+}
+
+.habitat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.habitat-icon {
+    font-size: 48px;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.badge-success {
+    background-color: #4CAF50;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+</style>
+{% endblock %}

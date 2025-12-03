@@ -9,6 +9,8 @@ from .models.habitat import HabitatModel
 from .models.user import UserModel
 from .analytics.network_analysis import NetworkAnalysis
 from .analytics.species_analysis import SpeciesAnalysis
+from .models.observation import ObservationModel
+from .models.search import SearchModel
 
 from .db_manager import db_manager
 
@@ -23,6 +25,8 @@ habitat_model = HabitatModel()
 user_model = UserModel()
 network_analysis = NetworkAnalysis()
 species_analysis = SpeciesAnalysis()
+observation_model = ObservationModel()
+search_model = SearchModel()
 
 # 认证装饰器
 def require_auth(action='view'):
@@ -103,10 +107,20 @@ def api_statistics():
         'species_count': species_model.count_species(),
         'relationship_count': relationship_model.count_relationships(),
         'habitat_count': habitat_model.count_habitats(),
-        'observation_count': 0,  # TODO: 实现观测记录统计
+        'observation_count': observation_model.count_observations(),  # ⭐ 新增
         'categories': species_model.get_category_stats()
     }
     return jsonify(stats)
+
+@app.route('/observations')
+def observations_page():
+    """观测记录页面"""
+    return render_template('observations.html')
+
+@app.route('/search')
+def search_page():
+    """搜索页面"""
+    return render_template('search.html')
 
 # API路由
 @app.route('/')
@@ -163,26 +177,56 @@ def api_create_relationship():
     return jsonify({'success': True, 'id': rel_id})
 
 
-@app.route('/api/relationship/<relationship_id>', methods=['DELETE'])
-def api_delete_relationship(relationship_id):
-    """删除生态关系"""
-    try:
-        result = relationship_model.delete_relationship(relationship_id)
-        if result:
-            return jsonify({
-                'success': True,
-                'message': '关系删除成功'
-            })
-        else:
+@app.route('/api/relationship/<relationship_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_relationship_detail(relationship_id):
+    """生态关系详情、更新、删除API"""
+    if request.method == 'GET':
+        # 获取单个关系详情
+        relationship = relationship_model.get_relationship(relationship_id)
+        if relationship:
+            return jsonify(relationship)
+        return jsonify({'error': 'Not found'}), 404
+    
+    elif request.method == 'PUT':
+        # 更新生态关系
+        try:
+            data = request.json
+            result = relationship_model.update_relationship(relationship_id, data)
+            if result:
+                return jsonify({
+                    'success': True,
+                    'message': '关系更新成功'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '关系不存在'
+                }), 404
+        except Exception as e:
             return jsonify({
                 'success': False,
-                'message': '关系不存在'
-            }), 404
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': str(e)
-        }), 500
+                'message': str(e)
+            }), 500
+    
+    elif request.method == 'DELETE':
+        # 删除生态关系
+        try:
+            result = relationship_model.delete_relationship(relationship_id)
+            if result:
+                return jsonify({
+                    'success': True,
+                    'message': '关系删除成功'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '关系不存在'
+                }), 404
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
 
 
 @app.route('/api/food-chain')
@@ -217,6 +261,188 @@ def delete_species(species_id):
             'success': False,
             'message': str(e)
         }), 500
+
+@app.route('/api/observations', methods=['GET', 'POST'])
+def api_observations():
+    """观测记录 API - 列表查询和添加"""
+    if request.method == 'POST':
+        # 添加观测记录
+        try:
+            data = request.json
+            
+            obs_id = observation_model.add_observation(
+                species_id=data['species_id'],
+                observer_name=data['observer_name'],
+                observer_type=data.get('observer_type', '公众'),
+                observation_date=data['observation_date'],
+                location=data.get('location', {}),
+                count=data.get('count', 1),
+                behavior=data.get('behavior', ''),
+                photo_url=data.get('photo_url', ''),
+                notes=data.get('notes', '')
+            )
+            
+            return jsonify({'success': True, 'id': obs_id})
+            
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)}), 500
+    
+    else:
+        # GET 请求 - 列表查询
+        species_id = request.args.get('species_id')
+        province = request.args.get('province')
+        verified = request.args.get('verified')
+        observer_type = request.args.get('observer_type')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # 转换 verified 参数
+        verified_filter = None
+        if verified == 'true':
+            verified_filter = True
+        elif verified == 'false':
+            verified_filter = False
+        
+        observations = observation_model.list_observations(
+            species_id=species_id,
+            province=province,
+            verified=verified_filter,
+            observer_type=observer_type,
+            start_date=start_date,
+            end_date=end_date
+        )
+        return jsonify(observations)
+
+
+@app.route('/api/observation/<obs_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_observation_detail(obs_id):
+    """观测记录详情 API - 查询、更新、删除"""
+    
+    if request.method == 'GET':
+        # 查询观测记录详情
+        observation = observation_model.get_observation(obs_id)
+        if observation:
+            return jsonify(observation)
+        return jsonify({'error': 'Not found'}), 404
+    
+    elif request.method == 'PUT':
+        # 更新观测记录
+        try:
+            data = request.json
+            
+            # 构建更新数据
+            update_data = {}
+            
+            # 允许更新的字段
+            if 'observation' in data:
+                update_data['observation'] = data['observation']
+            
+            if 'observer' in data:
+                update_data['observer'] = data['observer']
+            
+            if not update_data:
+                return jsonify({
+                    'success': False,
+                    'message': '没有提供要更新的字段'
+                }), 400
+            
+            result = observation_model.update_observation(obs_id, update_data)
+            
+            if result:
+                return jsonify({
+                    'success': True,
+                    'message': '观测记录更新成功'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '观测记录不存在'
+                }), 404
+                
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+    
+    elif request.method == 'DELETE':
+        # 删除观测记录
+        try:
+            result = observation_model.delete_observation(obs_id)
+            if result:
+                return jsonify({
+                    'success': True,
+                    'message': '观测记录删除成功'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '观测记录不存在'
+                }), 404
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+
+
+@app.route('/api/observation/<obs_id>/verify', methods=['POST'])
+def api_verify_observation(obs_id):
+    """验证观测记录"""
+    try:
+        data = request.json
+        verifier_name = data.get('verifier_name', '管理员')
+        
+        result = observation_model.verify_observation(obs_id, verifier_name)
+        
+        if result:
+            return jsonify({
+                'success': True,
+                'message': '观测记录已验证'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '验证失败'
+            }), 404
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/observations/stream', methods=['GET'])
+def api_observations_stream():
+    """获取实时观测数据流"""
+    try:
+        count = int(request.args.get('count', 10))
+        stream_data = observation_model.get_recent_stream_data(count)
+        
+        return jsonify({
+            'success': True,
+            'data': stream_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/observations/statistics', methods=['GET'])
+def api_observations_statistics():
+    """获取观测记录统计数据"""
+    try:
+        stats = observation_model.get_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
 
 
 # 搜索相关 API 路由
@@ -279,6 +505,101 @@ def api_search_by_distribution():
             'count': len(results),
             'results': results
         })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+# 搜索相关 API 路由
+# 获取热门搜索词 API
+@app.route('/api/search/popular', methods=['GET'])
+def api_popular_searches():
+    """
+    获取热门搜索词 API
+    
+    Query Parameters:
+        limit: 可选，返回数量（默认10）
+    """
+    limit = int(request.args.get('limit', 10))
+    
+    try:
+        popular = search_model.get_popular_searches(limit)
+        
+        return jsonify({
+            'success': True,
+            'popular_searches': popular
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/search/recommendations', methods=['GET'])
+def api_search_recommendations():
+    """
+    获取推荐内容 API
+    
+    Query Parameters:
+        keyword: 基于此关键词推荐
+        limit: 可选，每类推荐数量（默认5）
+    """
+    keyword = request.args.get('keyword', '').strip()
+    limit = int(request.args.get('limit', 5))
+    
+    if not keyword:
+        return jsonify({
+            'success': False,
+            'message': '请提供关键词'
+        }), 400
+    
+    try:
+        recommendations = search_model.get_recommendations(keyword, limit)
+        
+        return jsonify({
+            'success': True,
+            'recommendations': recommendations
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/search/advanced', methods=['POST'])
+def api_advanced_search():
+    """
+    高级搜索 API
+    
+    Body (JSON):
+    {
+        "name": "东北虎",
+        "category": "哺乳动物",
+        "province": "吉林省",
+        "verified": true
+    }
+    """
+    try:
+        filters = request.json
+        
+        if not filters:
+            return jsonify({
+                'success': False,
+                'message': '请提供搜索条件'
+            }), 400
+        
+        results = search_model.advanced_search(filters)
+        
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+        
     except Exception as e:
         return jsonify({
             'success': False,

@@ -42,6 +42,11 @@
             </div>
 
             <div class="form-group">
+                <label>学名</label>
+                <input type="text" name="scientific_name" placeholder="例如: Panthera tigris altaica">
+            </div>
+
+            <div class="form-group">
                 <label>类别 *</label>
                 <select name="category" required>
                     <option value="">请选择</option>
@@ -72,6 +77,16 @@
             </div>
 
             <div class="form-group">
+                <label>形态特征 ⭐</label>
+                <textarea name="morphology" rows="3" placeholder="描述物种的形态特征，如体型、毛色、特殊器官等..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>分布区域</label>
+                <input type="text" name="distribution" placeholder="例如: 中国东北、俄罗斯远东">
+            </div>
+
+            <div class="form-group">
                 <label>保护等级</label>
                 <select name="protection_level">
                     <option value="">无</option>
@@ -89,6 +104,88 @@
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
                 <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 编辑物种模态框 ⭐ 新增 -->
+<div id="edit-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3>编辑物种信息</h3>
+        
+        <form id="edit-species-form" onsubmit="updateSpecies(event)">
+            <input type="hidden" id="edit-species-id" name="species_id">
+            
+            <div class="form-group">
+                <label>物种名称 *</label>
+                <input type="text" id="edit-name" name="name" required>
+            </div>
+
+            <div class="form-group">
+                <label>学名</label>
+                <input type="text" id="edit-scientific-name" name="scientific_name">
+            </div>
+
+            <div class="form-group">
+                <label>类别 *</label>
+                <select id="edit-category" name="category" required>
+                    <option value="">请选择</option>
+                    <option value="哺乳动物">哺乳动物</option>
+                    <option value="鸟类">鸟类</option>
+                    <option value="爬行动物">爬行动物</option>
+                    <option value="两栖动物">两栖动物</option>
+                    <option value="鱼类">鱼类</option>
+                    <option value="植物">植物</option>
+                    <option value="昆虫">昆虫</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>食性</label>
+                <select id="edit-diet" name="diet">
+                    <option value="">请选择</option>
+                    <option value="肉食">肉食</option>
+                    <option value="草食">草食</option>
+                    <option value="杂食">杂食</option>
+                    <option value="自养">自养（植物）</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>栖息地</label>
+                <input type="text" id="edit-habitat" name="habitat">
+            </div>
+
+            <div class="form-group">
+                <label>形态特征 ⭐</label>
+                <textarea id="edit-morphology" name="morphology" rows="3" placeholder="描述物种的形态特征..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>分布区域</label>
+                <input type="text" id="edit-distribution" name="distribution">
+            </div>
+
+            <div class="form-group">
+                <label>保护等级</label>
+                <select id="edit-protection-level" name="protection_level">
+                    <option value="">无</option>
+                    <option value="国家一级">国家一级保护</option>
+                    <option value="国家二级">国家二级保护</option>
+                    <option value="濒危">濒危物种</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>描述</label>
+                <textarea id="edit-description" name="description" rows="3"></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存更新</button>
             </div>
         </form>
     </div>
@@ -122,12 +219,15 @@ function displaySpecies(species) {
         <div class="species-card">
             <div class="species-icon">${getSpeciesIcon(s.category)}</div>
             <h4>${s.name}</h4>
+            ${s.scientific_name ? `<p class="scientific-name"><i>${s.scientific_name}</i></p>` : ''}
             <p class="category">${s.category}</p>
-            <p class="diet">${s.diet || '未知'}</p>
+            <p class="diet">🍽️ ${s.diet || '未知'}</p>
             <p class="habitat">📍 ${s.habitat || '未知'}</p>
+            ${s.morphology ? `<p class="morphology">🔬 ${s.morphology.substring(0, 50)}${s.morphology.length > 50 ? '...' : ''}</p>` : ''}
             ${s.protection_level ? `<span class="badge badge-danger">${s.protection_level}</span>` : ''}
             <div class="card-actions">
                 <button onclick="viewSpecies('${s._id}')" class="btn-small">详情</button>
+                <button onclick="editSpecies('${s._id}')" class="btn-small btn-warning">编辑</button>
                 <button onclick="deleteSpecies('${s._id}')" class="btn-small btn-danger">删除</button>
             </div>
         </div>
@@ -171,7 +271,7 @@ function showAddModal() {
     document.getElementById('add-modal').style.display = 'block';
 }
 
-// 关闭模态框
+// 关闭添加模态框
 function closeAddModal() {
     document.getElementById('add-modal').style.display = 'none';
     document.getElementById('add-species-form').reset();
@@ -204,6 +304,78 @@ async function addSpecies(event) {
     }
 }
 
+// 编辑物种 ⭐ 新增功能
+async function editSpecies(id) {
+    try {
+        // 1. 获取物种详情
+        const response = await fetch(`/api/species/${id}`);
+        const species = await response.json();
+        
+        if (!species || species.error) {
+            alert('获取物种信息失败');
+            return;
+        }
+        
+        // 2. 填充表单
+        document.getElementById('edit-species-id').value = id;
+        document.getElementById('edit-name').value = species.name || '';
+        document.getElementById('edit-scientific-name').value = species.scientific_name || '';
+        document.getElementById('edit-category').value = species.category || '';
+        document.getElementById('edit-diet').value = species.diet || '';
+        document.getElementById('edit-habitat').value = species.habitat || '';
+        document.getElementById('edit-morphology').value = species.morphology || '';
+        document.getElementById('edit-distribution').value = species.distribution || '';
+        document.getElementById('edit-protection-level').value = species.protection_level || '';
+        document.getElementById('edit-description').value = species.description || '';
+        
+        // 3. 显示模态框
+        document.getElementById('edit-modal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('加载物种信息失败:', error);
+        alert('加载失败，请重试');
+    }
+}
+
+// 关闭编辑模态框
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+    document.getElementById('edit-species-form').reset();
+}
+
+// 更新物种信息 ⭐ 新增功能
+async function updateSpecies(event) {
+    event.preventDefault();
+    
+    const speciesId = document.getElementById('edit-species-id').value;
+    const formData = new FormData(event.target);
+    const data = Object.fromEntries(formData);
+    
+    // 移除 species_id（不需要提交这个字段）
+    delete data.species_id;
+    
+    try {
+        const response = await fetch(`/api/species/${speciesId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('更新成功！');
+            closeEditModal();
+            loadSpecies();  // 刷新列表
+        } else {
+            alert('更新失败: ' + (result.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('更新失败:', error);
+        alert('更新失败，请重试');
+    }
+}
+
 // 查看详情
 function viewSpecies(id) {
     window.location.href = `/species/${id}`;
@@ -233,10 +405,43 @@ loadSpecies();
 
 // 点击模态框外部关闭
 window.onclick = function(event) {
-    const modal = document.getElementById('add-modal');
-    if (event.target == modal) {
+    const addModal = document.getElementById('add-modal');
+    const editModal = document.getElementById('edit-modal');
+    
+    if (event.target == addModal) {
         closeAddModal();
+    }
+    if (event.target == editModal) {
+        closeEditModal();
     }
 }
 </script>
+
+<style>
+/* 编辑按钮样式 */
+.btn-warning {
+    background-color: #ff9800;
+    color: white;
+}
+
+.btn-warning:hover {
+    background-color: #f57c00;
+}
+
+/* 学名样式（斜体） */
+.scientific-name {
+    font-style: italic;
+    color: #666;
+    font-size: 0.9em;
+    margin: 5px 0;
+}
+
+/* 形态特征简介样式 */
+.morphology {
+    font-size: 0.85em;
+    color: #555;
+    margin: 8px 0;
+    line-height: 1.4;
+}
+</style>
 {% endblock %}

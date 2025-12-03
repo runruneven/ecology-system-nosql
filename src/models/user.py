@@ -262,5 +262,3 @@ class UserModel:
         
         return result.matched_count > 0
 
-
-
