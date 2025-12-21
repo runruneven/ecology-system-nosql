@@ -123,10 +123,20 @@ async function addHabitat(event) {
         }
     };
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch('/api/habitats', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         
@@ -147,9 +157,19 @@ async function addHabitat(event) {
 async function deleteHabitat(id) {
     if (!confirm('确定要删除这个栖息地吗？')) return;
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/habitats/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'X-Session-Token': sessionToken
+            }
         });
         
         const result = await response.json();

@@ -222,10 +222,20 @@ async function addRelationship(event) {
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData);
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch('/api/relationship', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         
@@ -289,10 +299,20 @@ async function updateRelationship(event) {
     // 移除 relationship_id（不需要提交这个字段）
     delete data.relationship_id;
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/relationship/${relationshipId}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         
@@ -314,9 +334,19 @@ async function updateRelationship(event) {
 async function deleteRelationship(id) {
     if (!confirm('确定删除此关系吗？')) return;
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/relationship/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'X-Session-Token': sessionToken
+            }
         });
         
         if (response.ok) {

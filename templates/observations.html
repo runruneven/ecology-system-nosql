@@ -172,10 +172,20 @@ async function addObservation(event) {
         behavior: formData.get('behavior') || ''
     };
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch('/api/observations', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         

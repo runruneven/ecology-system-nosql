@@ -284,10 +284,20 @@ async function addSpecies(event) {
     const formData = new FormData(event.target);
     const data = Object.fromEntries(formData);
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch('/api/species', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         
@@ -354,10 +364,20 @@ async function updateSpecies(event) {
     // 移除 species_id（不需要提交这个字段）
     delete data.species_id;
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/species/${speciesId}`, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
             body: JSON.stringify(data)
         });
         
@@ -385,9 +405,19 @@ function viewSpecies(id) {
 async function deleteSpecies(id) {
     if (!confirm('确定要删除这个物种吗？')) return;
     
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return;
+    }
+    
     try {
         const response = await fetch(`/api/species/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'X-Session-Token': sessionToken
+            }
         });
         
         if (response.ok) {

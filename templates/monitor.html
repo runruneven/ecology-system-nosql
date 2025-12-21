@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}系统监控{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>📊 系统监控</h2>
+    <button class="btn btn-primary" onclick="refreshStats()">刷新数据</button>
+</div>
+
+<div class="monitor-container">
+    <!-- 实时指标 -->
+    <div class="monitor-section">
+        <h3>🔴 实时指标</h3>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">API 调用总数</div>
+                <div class="stat-value" id="api-call-count">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">今日搜索次数</div>
+                <div class="stat-value" id="today-searches">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">当前在线用户</div>
+                <div class="stat-value" id="online-users">-</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MongoDB 性能数据 -->
+    <div class="monitor-section">
+        <h3>💾 MongoDB 数据统计</h3>
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>集合名称</th>
+                        <th>文档数量</th>
+                        <th>存储大小 (MB)</th>
+                    </tr>
+                </thead>
+                <tbody id="mongodb-stats">
+                    <!-- 动态加载 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 数据库连接延迟 -->
+    <div class="monitor-section">
+        <h3>⚡ 数据库连接延迟</h3>
+        <div class="latency-grid">
+            <div class="latency-card">
+                <div class="latency-label">MongoDB</div>
+                <div class="latency-value" id="mongodb-latency">-</div>
+            </div>
+            <div class="latency-card">
+                <div class="latency-label">Neo4j</div>
+                <div class="latency-value" id="neo4j-latency">-</div>
+            </div>
+            <div class="latency-card">
+                <div class="latency-label">Redis</div>
+                <div class="latency-value" id="redis-latency">-</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据健康度 -->
+    <div class="monitor-section">
+        <h3>🏥 数据健康度</h3>
+        <div id="quality-report">
+            <!-- 动态加载 -->
+        </div>
+    </div>
+
+    <!-- 数据备份 -->
+    <div class="monitor-section">
+        <h3>💾 数据备份</h3>
+        <div class="backup-info">
+            <p><strong>上次自动备份时间：</strong><span id="last-backup">2024-12-01 03:00:00</span></p>
+            <p><strong>备份存储路径：</strong><span id="backup-path">/backup/ecology_db_20241201_030000.tar.gz</span></p>
+            <p><strong>备份文件大小：</strong><span id="backup-size">125.6 MB</span></p>
+        </div>
+    </div>
+</div>
+
+<script>
+// 刷新统计数据
+async function refreshStats() {
+    try {
+        // 获取监控数据
+        const response = await fetch('/api/monitor/stats');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            const data = result.data;
+            
+            // 更新实时指标
+            if (data.redis) {
+                document.getElementById('api-call-count').textContent = data.redis.api_call_count || 0;
+                document.getElementById('today-searches').textContent = data.redis.today_searches || 0;
+                document.getElementById('online-users').textContent = data.redis.online_users || 0;
+            }
+            
+            // 更新 MongoDB 统计
+            if (data.mongodb) {
+                const tbody = document.getElementById('mongodb-stats');
+                tbody.innerHTML = Object.entries(data.mongodb).map(([name, stats]) => {
+                    if (name === 'error') return '';
+                    return `
+                        <tr>
+                            <td>${name}</td>
+                            <td>${stats.count || 0}</td>
+                            <td>${stats.size_mb || 0}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            // 更新延迟信息
+            if (data.latency) {
+                const formatLatency = (latency) => {
+                    if (latency === null || latency === undefined) return '连接失败';
+                    return `${latency} ms`;
+                };
+                document.getElementById('mongodb-latency').textContent = formatLatency(data.latency.mongodb);
+                document.getElementById('neo4j-latency').textContent = formatLatency(data.latency.neo4j);
+                document.getElementById('redis-latency').textContent = formatLatency(data.latency.redis);
+            }
+        }
+        
+        // 获取数据质量报告
+        const qualityResponse = await fetch('/api/monitor/quality');
+        const qualityResult = await qualityResponse.json();
+        
+        if (qualityResult.success && qualityResult.data) {
+            const quality = qualityResult.data;
+            const reportDiv = document.getElementById('quality-report');
+            
+            let html = '';
+            
+            // 完整性检查
+            if (quality.integrity) {
+                html += `
+                    <div class="quality-item">
+                        <h4>数据完整性</h4>
+                        <p>缺少 category 字段的物种: <strong>${quality.integrity.missing_category || 0}</strong></p>
+                        <p>缺少 habitat 字段的物种: <strong>${quality.integrity.missing_habitat || 0}</strong></p>
+                        <p>总物种数: <strong>${quality.integrity.total_species || 0}</strong></p>
+                    </div>
+                `;
+            }
+            
+            // 一致性检查
+            if (quality.consistency) {
+                html += `
+                    <div class="quality-item">
+                        <h4>数据一致性</h4>
+                        <p>Neo4j 节点数: <strong>${quality.consistency.neo4j_nodes || 0}</strong></p>
+                        <p>MongoDB 中缺失的记录: <strong>${quality.consistency.missing_in_mongo || 0}</strong></p>
+                    </div>
+                `;
+            }
+            
+            // 异常预警
+            if (quality.alerts && quality.alerts.length > 0) {
+                html += `
+                    <div class="quality-item">
+                        <h4>最近异常预警</h4>
+                        <ul>
+                            ${quality.alerts.map(alert => `
+                                <li>
+                                    <strong>${alert.type}</strong>: ${alert.message}
+                                    <br><small>${alert.timestamp}</small>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+            } else {
+                html += '<div class="quality-item"><p>✅ 暂无异常预警</p></div>';
+            }
+            
+            reportDiv.innerHTML = html;
+        }
+    } catch (error) {
+        console.error('加载监控数据失败:', error);
+        alert('加载监控数据失败');
+    }
+}
+
+// 页面加载时自动刷新
+document.addEventListener('DOMContentLoaded', function() {
+    refreshStats();
+    // 每10秒自动刷新
+    setInterval(refreshStats, 10000);
+});
+</script>
+
+<style>
+.monitor-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.monitor-section {
+    background: white;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.stat-card {
+    background: #f5f5f5;
+    padding: 20px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #2196F3;
+}
+
+.latency-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.latency-card {
+    background: #f5f5f5;
+    padding: 20px;
+    border-radius: 6px;
+    text-align: center;
+}
+
+.latency-label {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 10px;
+}
+
+.latency-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #4CAF50;
+}
+
+.quality-item {
+    margin: 15px 0;
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 6px;
+}
+
+.quality-item h4 {
+    margin-top: 0;
+    color: #333;
+}
+
+.backup-info {
+    padding: 15px;
+    background: #f9f9f9;
+    border-radius: 6px;
+}
+
+.backup-info p {
+    margin: 10px 0;
+}
+</style>
+{% endblock %}
+

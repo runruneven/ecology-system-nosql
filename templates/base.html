@@ -14,11 +14,14 @@
                 <li><a href="/">首页</a></li>
                 <li><a href="/species">物种管理</a></li>
                 <li><a href="/relationships">生态关系</a></li>
-                <li><a href="/food-chain">食物链查询</a></li>
                 <li><a href="/habitats">栖息地</a></li>
                 <li><a href="/observations">观测记录</a></li>
+                <li><a href="/food-chain">食物链查询</a></li>
                 <li><a href="/statistics">数据统计</a></li>
                 <li><a href="/search">搜索</a></li>
+                <li><a href="/monitor">系统监控</a></li>
+                <li id="login-menu-item"><a href="/login">登录</a></li>
+                <li id="logout-menu-item" style="display: none;"><a href="#" onclick="handleLogout(); return false;">退出</a></li>
             </ul>
         </div>
     </nav>
@@ -29,9 +32,103 @@
 
     <footer>
         <p>© 2024 动植物物种生态关系系统 | NoSQL 数据库课程设计</p>
+        <p id="system-status">系统状态：<span id="status-text">检查中...</span></p>
     </footer>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // 检查登录状态
+        function checkLoginStatus() {
+            const sessionToken = localStorage.getItem('session_token');
+            const loginItem = document.getElementById('login-menu-item');
+            const logoutItem = document.getElementById('logout-menu-item');
+            
+            if (sessionToken) {
+                fetch('/api/user/me', {
+                    headers: {'X-Session-Token': sessionToken}
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        if (loginItem) loginItem.style.display = 'none';
+                        if (logoutItem) logoutItem.style.display = 'block';
+                    } else {
+                        localStorage.removeItem('session_token');
+                        if (loginItem) loginItem.style.display = 'block';
+                        if (logoutItem) logoutItem.style.display = 'none';
+                    }
+                })
+                .catch(() => {
+                    localStorage.removeItem('session_token');
+                    if (loginItem) loginItem.style.display = 'block';
+                    if (logoutItem) logoutItem.style.display = 'none';
+                });
+            } else {
+                if (loginItem) loginItem.style.display = 'block';
+                if (logoutItem) logoutItem.style.display = 'none';
+            }
+        }
+        
+        // 退出登录
+        function handleLogout() {
+            const sessionToken = localStorage.getItem('session_token');
+            if (sessionToken) {
+                fetch('/api/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Session-Token': sessionToken
+                    },
+                    body: JSON.stringify({ session_token: sessionToken })
+                })
+                .then(() => {
+                    localStorage.removeItem('session_token');
+                    window.location.href = '/';
+                })
+                .catch(() => {
+                    localStorage.removeItem('session_token');
+                    window.location.href = '/';
+                });
+            } else {
+                window.location.href = '/';
+            }
+        }
+        
+        // 检查系统状态
+        function checkSystemStatus() {
+            fetch('/api/monitor/stats')
+                .then(response => response.json())
+                .then(data => {
+                    const statusText = document.getElementById('status-text');
+                    if (data.success && data.data.latency) {
+                        const latency = data.data.latency;
+                        if (latency.mongodb && latency.neo4j && latency.redis) {
+                            statusText.textContent = '运行中';
+                            statusText.style.color = '#4CAF50';
+                        } else {
+                            statusText.textContent = '部分服务异常';
+                            statusText.style.color = '#ff9800';
+                        }
+                    } else {
+                        statusText.textContent = '检查失败';
+                        statusText.style.color = '#f44336';
+                    }
+                })
+                .catch(() => {
+                    const statusText = document.getElementById('status-text');
+                    statusText.textContent = '检查失败';
+                    statusText.style.color = '#f44336';
+                });
+        }
+        
+        // 页面加载时检查
+        document.addEventListener('DOMContentLoaded', function() {
+            checkLoginStatus();
+            checkSystemStatus();
+            // 每30秒检查一次系统状态
+            setInterval(checkSystemStatus, 30000);
+        });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

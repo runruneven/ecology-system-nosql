@@ -261,4 +261,28 @@ class UserModel:
         )
         
         return result.matched_count > 0
+    
+    def log_action(self, user_id, action, target_type, target_id, **extra):
+        """
+        记录操作日志
+        
+        Args:
+            user_id: 用户ID
+            action: 操作类型（add, edit, delete, view）
+            target_type: 目标类型（species, habitat, relationship, observation）
+            target_id: 目标ID
+            **extra: 额外信息
+        """
+        logs_col = self.db['logs']
+        
+        log_doc = {
+            'user_id': user_id,
+            'action': action,
+            'target_type': target_type,
+            'target_id': target_id,
+            'timestamp': datetime.now(),
+            **extra
+        }
+        
+        logs_col.insert_one(log_doc)
 
