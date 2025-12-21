@@ -93,7 +93,7 @@ def food_chain_page():
 @app.route('/habitats')
 def habitats_page():
     """栖息地管理页面"""
-    return render_template('habitat.html')
+    return render_template('habitats.html')
 
 @app.route('/statistics')
 def statistics_page():
@@ -148,13 +148,29 @@ def api_species():
         return jsonify(species_list)
 
 
-@app.route('/api/species/<species_id>')
-def api_species_detail(species_id):
-    """物种详情"""
-    species = species_model.get_species(species_id)
-    if species:
-        return jsonify(species)
-    return jsonify({'error': 'Not found'}), 404
+@app.route('/api/species/<species_id>', methods=['GET', 'PUT', 'DELETE'])
+def api_species_detail(species_id):     
+    """物种详情、更新、删除API"""
+    if request.method == 'GET':
+        species = species_model.get_species(species_id)
+        if species:
+            return jsonify(species)
+        return jsonify({'error': 'Not found'}), 404
+    elif request.method == 'PUT':
+        data = request.json
+        result = species_model.update_species(species_id, data)
+        if result:
+            return jsonify({'success': True, 'message': '物种更新成功'})
+        else:
+            return jsonify({'success': False, 'message': '物种不存在'}), 404
+    elif request.method == 'DELETE':
+        result = species_model.delete_species(species_id)
+        if result:
+            return jsonify({'success': True, 'message': '物种删除成功'})
+        else:
+            return jsonify({'success': False, 'message': '物种不存在'}), 404
+    
+    return jsonify({'error': 'Invalid request method'}), 405
 
 
 @app.route('/api/relationships', methods=['GET'])
@@ -264,53 +280,20 @@ def delete_species(species_id):
 
 @app.route('/api/observations', methods=['GET', 'POST'])
 def api_observations():
-    """观测记录 API - 列表查询和添加"""
+    """观测记录API"""
     if request.method == 'POST':
-        # 添加观测记录
-        try:
-            data = request.json
-            
-            obs_id = observation_model.add_observation(
-                species_id=data['species_id'],
-                observer_name=data['observer_name'],
-                observer_type=data.get('observer_type', '公众'),
-                observation_date=data['observation_date'],
-                location=data.get('location', {}),
-                count=data.get('count', 1),
-                behavior=data.get('behavior', ''),
-                photo_url=data.get('photo_url', ''),
-                notes=data.get('notes', '')
-            )
-            
-            return jsonify({'success': True, 'id': obs_id})
-            
-        except Exception as e:
-            return jsonify({'success': False, 'message': str(e)}), 500
-    
-    else:
-        # GET 请求 - 列表查询
-        species_id = request.args.get('species_id')
-        province = request.args.get('province')
-        verified = request.args.get('verified')
-        observer_type = request.args.get('observer_type')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
-        # 转换 verified 参数
-        verified_filter = None
-        if verified == 'true':
-            verified_filter = True
-        elif verified == 'false':
-            verified_filter = False
-        
-        observations = observation_model.list_observations(
-            species_id=species_id,
-            province=province,
-            verified=verified_filter,
-            observer_type=observer_type,
-            start_date=start_date,
-            end_date=end_date
+        data = request.json
+        obs_id = observation_model.add_observation(
+            species_id=data['species_id'],
+            observer=data.get('observer', ''),
+            location=data.get('location', ''),
+            count=data.get('count', 1),
+            behavior=data.get('behavior', '')
         )
+        return jsonify({'success': True, 'id': obs_id})
+    else:
+        species_id = request.args.get('species_id')
+        observations = observation_model.list_observations(species_id=species_id)
         return jsonify(observations)
 
 
@@ -612,80 +595,28 @@ def api_advanced_search():
 def api_habitats():
     """栖息地API"""
     if request.method == 'POST':
-        # 创建栖息地
-        try:
-            data = request.json
-            habitat_id = habitat_model.add_habitat(
-                name=data['name'],
-                location=data.get('location', {}),
-                environment=data.get('environment', {}),
-                protection_level=data.get('protection_level', ''),
-                area=data.get('area', ''),
-                species_list=data.get('species_list', [])
-            )
-            return jsonify({'success': True, 'id': habitat_id})
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': str(e)
-            }), 400
+        data = request.json
+        habitat_id = habitat_model.add_habitat(
+            name=data['name'],
+            location=data.get('location', {}),
+            environment=data.get('environment', ''),
+            protection_level=data.get('protection_level', '')
+        )
+        return jsonify({'success': True, 'id': habitat_id})
     else:
-        # 获取栖息地列表
-        protection_level = request.args.get('protection_level')
-        habitats = habitat_model.list_habitats(protection_level=protection_level)
+        habitats = habitat_model.list_habitats()
         return jsonify(habitats)
 
 
-@app.route('/api/habitat/<habitat_id>', methods=['GET', 'PUT', 'DELETE'])
+@app.route('/api/habitats/<habitat_id>', methods=['GET', 'DELETE'])
 def api_habitat_detail(habitat_id):
-    """栖息地详情、更新、删除API"""
-    if request.method == 'GET':
-        # 获取单个栖息地详情
+    """栖息地详情、删除API"""
+    if request.method == 'DELETE':
+        habitat_model.delete_habitat(habitat_id)
+        return jsonify({'success': True})
+    else:
         habitat = habitat_model.get_habitat(habitat_id)
-        if habitat:
-            return jsonify(habitat)
-        return jsonify({'error': 'Not found'}), 404
-    
-    elif request.method == 'PUT':
-        # 更新栖息地
-        try:
-            data = request.json
-            result = habitat_model.update_habitat(habitat_id, data)
-            if result:
-                return jsonify({
-                    'success': True,
-                    'message': '栖息地更新成功'
-                })
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': '栖息地不存在'
-                }), 404
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': str(e)
-            }), 500
-    
-    elif request.method == 'DELETE':
-        # 删除栖息地
-        try:
-            result = habitat_model.delete_habitat(habitat_id)
-            if result:
-                return jsonify({
-                    'success': True,
-                    'message': '栖息地删除成功'
-                })
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': '栖息地不存在'
-                }), 404
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'message': str(e)
-            }), 500
+        return jsonify(habitat) if habitat else jsonify({'error': 'Not found'}), 404
 
 
 # 用户认证相关 API 路由

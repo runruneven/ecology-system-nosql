@@ -49,6 +49,36 @@ class SpeciesModel:
         
         return species_id
     
+    def update_species(self, species_id, update_data):
+        """更新物种信息
+        Args:
+            species_id: 物种ID
+            update_data: 要更新的数据字典
+        Returns:
+            更新是否成功（布尔值）
+        """
+        from bson import ObjectId
+        # 移除 _id 字段（如果存在），因为 MongoDB 不允许更新 _id
+        update_data = {k: v for k, v in update_data.items() if k != '_id'}
+
+        result = self.mongo_col.update_one(
+            {'_id': ObjectId(species_id)}, 
+            {'$set': update_data}
+            )
+        if result.matched_count == 0:
+            return False
+        # 2. 更新或删除 Redis 缓存
+        cache_key = f'species:{species_id}'
+        # 重新查询更新后的数据并更新缓存
+        updated_species = self.mongo_col.find_one({'_id': ObjectId(species_id)})
+        if updated_species:
+            cache_data = serialize_doc(updated_species)
+            self.redis.setex(cache_key, CACHE_EXPIRY, json.dumps(cache_data))   
+        else:
+            # 如果查询失败，删除缓存
+            self.redis.delete(cache_key)    
+        return True
+
     def get_species(self, species_id):
         """获取物种详情（先查缓存）"""
         # 1. 先查 Redis 缓存

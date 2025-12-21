@@ -1,230 +1,162 @@
 {% extends "base.html" %}
 
-{% block title %}观测记录管理{% endblock %}
+{% block title %}观测记录{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h2>📝 观测记录管理</h2>
-    <button class="btn btn-primary" onclick="showAddModal()">+ 提交观测记录</button>
+    <h2>观测记录</h2>
+    <button class="btn btn-primary" onclick="showAddModal()">+ 添加观测记录</button>
 </div>
 
 <!-- 筛选器 -->
 <div class="filters">
-    <select id="verified-filter" onchange="filterObservations()">
-        <option value="">全部记录</option>
-        <option value="true">已验证</option>
-        <option value="false">待验证</option>
-    </select>
-
-    <select id="observer-type-filter" onchange="filterObservations()">
-        <option value="">全部观测者</option>
-        <option value="科研人员">科研人员</option>
-        <option value="公众">公众观测</option>
-    </select>
-
-    <button class="btn btn-secondary" onclick="showStreamData()">📡 实时数据流</button>
+    <input type="text" id="species-id-filter" placeholder="按物种ID筛选..." onkeyup="filterObservations()">
+    <button class="btn btn-secondary" onclick="clearFilter()">清除筛选</button>
 </div>
 
-<!-- 观测记录列表 -->
-<div class="observation-grid" id="observation-list">
-    <!-- 动态加载 -->
+<!-- 观测记录表格 -->
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>物种ID</th>
+                <th>观测者</th>
+                <th>时间</th>
+                <th>数量</th>
+                <th>行为</th>
+                <th>位置</th>
+            </tr>
+        </thead>
+        <tbody id="observations-list">
+            <!-- 动态加载 -->
+        </tbody>
+    </table>
 </div>
 
 <!-- 添加观测记录模态框 -->
 <div id="add-modal" class="modal">
     <div class="modal-content">
         <span class="close" onclick="closeAddModal()">&times;</span>
-        <h3>提交观测记录</h3>
+        <h3>添加新观测记录</h3>
         
-        <form id="add-obs-form" onsubmit="addObservation(event)">
+        <form id="add-observation-form" onsubmit="addObservation(event)">
             <div class="form-group">
-                <label>观测物种 *</label>
-                <select name="species_id" id="species-select" required>
-                    <option value="">请选择物种</option>
-                </select>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>观测者姓名 *</label>
-                    <input type="text" name="observer_name" required placeholder="例如: 张三">
-                </div>
-
-                <div class="form-group">
-                    <label>观测者类型 *</label>
-                    <select name="observer_type" required>
-                        <option value="公众">公众</option>
-                        <option value="科研人员">科研人员</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>观测日期 *</label>
-                    <input type="date" name="observation_date" required>
-                </div>
-
-                <div class="form-group">
-                    <label>观测数量</label>
-                    <input type="number" name="count" value="1" min="1">
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>省份 *</label>
-                    <input type="text" name="province" required placeholder="例如: 吉林省">
-                </div>
-
-                <div class="form-group">
-                    <label>城市</label>
-                    <input type="text" name="city" placeholder="例如: 长春市">
-                </div>
+                <label>物种ID *</label>
+                <input type="text" name="species_id" required placeholder="例如: 507f1f77bcf86cd799439011">
             </div>
 
             <div class="form-group">
-                <label>观测行为</label>
+                <label>观测者</label>
+                <input type="text" name="observer" placeholder="例如: 张三">
+            </div>
+
+            <div class="form-group">
+                <label>位置</label>
+                <input type="text" name="location" placeholder="例如: 吉林省长白山">
+            </div>
+
+            <div class="form-group">
+                <label>数量</label>
+                <input type="number" name="count" value="1" min="1" placeholder="观测到的数量">
+            </div>
+
+            <div class="form-group">
+                <label>行为</label>
                 <input type="text" name="behavior" placeholder="例如: 觅食、迁徙、繁殖">
-            </div>
-
-            <div class="form-group">
-                <label>照片URL</label>
-                <input type="url" name="photo_url" placeholder="http://example.com/photo.jpg">
-            </div>
-
-            <div class="form-group">
-                <label>备注</label>
-                <textarea name="notes" rows="2" placeholder="其他观测信息..."></textarea>
             </div>
 
             <div class="form-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeAddModal()">取消</button>
-                <button type="submit" class="btn btn-primary">提交</button>
+                <button type="submit" class="btn btn-primary">保存</button>
             </div>
         </form>
     </div>
 </div>
 
-<!-- 实时数据流模态框 -->
-<div id="stream-modal" class="modal">
-    <div class="modal-content">
-        <span class="close" onclick="closeStreamModal()">&times;</span>
-        <h3>📡 实时观测数据流</h3>
-        <p class="subtitle">基于 Redis Stream 的实时数据推送</p>
-        
-        <div id="stream-data-container">
-            <!-- 动态加载 -->
-        </div>
-        
-        <button class="btn btn-secondary" onclick="refreshStreamData()">🔄 刷新</button>
-    </div>
-</div>
-
 <script>
 let allObservations = [];
-let allSpecies = [];
+let currentSpeciesId = null;
 
-// 加载物种列表
-async function loadSpeciesForSelect() {
-    try {
-        const response = await fetch('/api/species');
-        allSpecies = await response.json();
-        
-        const select = document.getElementById('species-select');
-        const options = allSpecies.map(s => 
-            `<option value="${s._id}">${s.name} (${s.category})</option>`
-        ).join('');
-        
-        select.innerHTML = '<option value="">请选择物种</option>' + options;
-    } catch (error) {
-        console.error('加载物种失败:', error);
-    }
+// 从URL获取物种ID筛选参数
+function getSpeciesIdFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('species_id');
 }
 
 // 加载观测记录列表
 async function loadObservations() {
     try {
-        const response = await fetch('/api/observations');
+        // 获取URL中的species_id参数
+        const speciesId = getSpeciesIdFromUrl() || currentSpeciesId;
+        let url = '/api/observations';
+        
+        if (speciesId) {
+            url += `?species_id=${speciesId}`;
+        }
+        
+        const response = await fetch(url);
         allObservations = await response.json();
         displayObservations(allObservations);
     } catch (error) {
         console.error('加载失败:', error);
-        alert('加载观测记录失败');
+        alert('加载观测记录数据失败');
     }
 }
 
 // 显示观测记录
 function displayObservations(observations) {
-    const container = document.getElementById('observation-list');
+    const tbody = document.getElementById('observations-list');
     
     if (observations.length === 0) {
-        container.innerHTML = '<p class="no-data">暂无观测记录</p>';
+        tbody.innerHTML = '<tr><td colspan="6" class="no-data">暂无数据</td></tr>';
         return;
     }
     
-    container.innerHTML = observations.map(o => `
-        <div class="observation-card ${o.verified ? 'verified' : 'unverified'}">
-            <div class="obs-header">
-                <h4>🔬 ${o.species_name}</h4>
-                ${o.verified ? 
-                    '<span class="badge badge-success">✓ 已验证</span>' : 
-                    '<span class="badge badge-warning">待验证</span>'}
-            </div>
-            
-            <div class="obs-info">
-                <p>👤 观测者: ${o.observer?.name} (${o.observer?.type})</p>
-                <p>📅 日期: ${o.observation?.date}</p>
-                <p>📍 地点: ${o.observation?.location?.province || '未知'} ${o.observation?.location?.city || ''}</p>
-                <p>🔢 数量: ${o.observation?.count || 1} 只/株</p>
-                ${o.observation?.behavior ? `<p>🐾 行为: ${o.observation.behavior}</p>` : ''}
-            </div>
-            
-            ${o.observation?.notes ? `<p class="obs-notes">${o.observation.notes}</p>` : ''}
-            
-            <div class="card-actions">
-                ${!o.verified ? 
-                    `<button onclick="verifyObservation('${o._id}')" class="btn-small btn-success">✓ 验证</button>` : 
-                    `<small>已由 ${o.verifier} 验证</small>`}
-                <button onclick="deleteObservation('${o._id}')" class="btn-small btn-danger">删除</button>
-            </div>
-        </div>
-    `).join('');
+    tbody.innerHTML = observations.map(obs => {
+        const timestamp = obs.timestamp ? new Date(obs.timestamp).toLocaleString('zh-CN') : '未知';
+        return `
+            <tr>
+                <td>${obs.species_id || 'N/A'}</td>
+                <td>${obs.observer || '未知'}</td>
+                <td>${timestamp}</td>
+                <td>${obs.count || 0}</td>
+                <td>${obs.behavior || '-'}</td>
+                <td>${obs.location || '-'}</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // 筛选观测记录
 function filterObservations() {
-    const verified = document.getElementById('verified-filter').value;
-    const observerType = document.getElementById('observer-type-filter').value;
+    const speciesId = document.getElementById('species-id-filter').value.trim();
+    currentSpeciesId = speciesId || null;
     
-    let filtered = allObservations;
-    
-    if (verified === 'true') {
-        filtered = filtered.filter(o => o.verified === true);
-    } else if (verified === 'false') {
-        filtered = filtered.filter(o => o.verified === false);
+    if (speciesId) {
+        // 如果有筛选条件，重新加载数据
+        loadObservations();
+    } else {
+        // 如果没有筛选条件，显示所有数据
+        displayObservations(allObservations);
     }
-    
-    if (observerType) {
-        filtered = filtered.filter(o => o.observer?.type === observerType);
-    }
-    
-    displayObservations(filtered);
+}
+
+// 清除筛选
+function clearFilter() {
+    document.getElementById('species-id-filter').value = '';
+    currentSpeciesId = null;
+    loadObservations();
 }
 
 // 显示添加模态框
 function showAddModal() {
-    loadSpeciesForSelect();
-    // 设置默认日期为今天
-    document.querySelector('input[name="observation_date"]').value = 
-        new Date().toISOString().split('T')[0];
     document.getElementById('add-modal').style.display = 'block';
 }
 
 // 关闭添加模态框
 function closeAddModal() {
     document.getElementById('add-modal').style.display = 'none';
-    document.getElementById('add-obs-form').reset();
+    document.getElementById('add-observation-form').reset();
 }
 
 // 添加观测记录
@@ -232,21 +164,12 @@ async function addObservation(event) {
     event.preventDefault();
     
     const formData = new FormData(event.target);
-    
-    // 构建数据结构
     const data = {
         species_id: formData.get('species_id'),
-        observer_name: formData.get('observer_name'),
-        observer_type: formData.get('observer_type'),
-        observation_date: formData.get('observation_date'),
-        location: {
-            province: formData.get('province'),
-            city: formData.get('city') || ''
-        },
+        observer: formData.get('observer') || '',
+        location: formData.get('location') || '',
         count: parseInt(formData.get('count')) || 1,
-        behavior: formData.get('behavior') || '',
-        photo_url: formData.get('photo_url') || '',
-        notes: formData.get('notes') || ''
+        behavior: formData.get('behavior') || ''
     };
     
     try {
@@ -259,236 +182,74 @@ async function addObservation(event) {
         const result = await response.json();
         
         if (result.success) {
-            alert('✅ 观测记录提交成功！数据已推送到实时数据流。');
+            alert('添加成功！');
             closeAddModal();
             loadObservations();
         } else {
-            alert('提交失败: ' + (result.message || '未知错误'));
+            alert('添加失败: ' + (result.message || '未知错误'));
         }
     } catch (error) {
-        console.error('提交失败:', error);
-        alert('提交失败，请重试');
+        console.error('添加失败:', error);
+        alert('添加失败，请重试');
     }
-}
-
-// 验证观测记录
-async function verifyObservation(id) {
-    const verifierName = prompt('请输入验证者姓名:');
-    if (!verifierName) return;
-    
-    try {
-        const response = await fetch(`/api/observation/${id}/verify`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ verifier_name: verifierName })
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            alert('✅ 验证成功！');
-            loadObservations();
-        } else {
-            alert('验证失败: ' + (result.message || '未知错误'));
-        }
-    } catch (error) {
-        console.error('验证失败:', error);
-        alert('验证失败');
-    }
-}
-
-// 删除观测记录
-async function deleteObservation(id) {
-    if (!confirm('确定要删除这条观测记录吗？')) return;
-    
-    try {
-        const response = await fetch(`/api/observation/${id}`, {
-            method: 'DELETE'
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            alert('删除成功');
-            loadObservations();
-        } else {
-            alert('删除失败: ' + (result.message || '未知错误'));
-        }
-    } catch (error) {
-        console.error('删除失败:', error);
-        alert('删除失败');
-    }
-}
-
-// 显示实时数据流
-async function showStreamData() {
-    try {
-        const response = await fetch('/api/observations/stream?count=20');
-        const result = await response.json();
-        
-        if (result.success && result.data.length > 0) {
-            const container = document.getElementById('stream-data-container');
-            
-            container.innerHTML = `
-                <div class="stream-list">
-                    ${result.data.map(item => `
-                        <div class="stream-item">
-                            <div class="stream-time">${item.data.timestamp}</div>
-                            <div class="stream-content">
-                                <strong>${item.data.species_name}</strong>
-                                <span class="badge">${item.data.observer_type}</span>
-                                <span>${item.data.location_province}</span>
-                                <span>数量: ${item.data.count}</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-            
-            document.getElementById('stream-modal').style.display = 'block';
-        } else {
-            alert('暂无实时数据');
-        }
-    } catch (error) {
-        console.error('获取数据流失败:', error);
-        alert('获取实时数据失败');
-    }
-}
-
-function closeStreamModal() {
-    document.getElementById('stream-modal').style.display = 'none';
-}
-
-function refreshStreamData() {
-    closeStreamModal();
-    showStreamData();
 }
 
 // 页面加载时
-loadSpeciesForSelect();
 loadObservations();
 
 // 点击模态框外部关闭
 window.onclick = function(event) {
     const addModal = document.getElementById('add-modal');
-    const streamModal = document.getElementById('stream-modal');
     
     if (event.target == addModal) {
         closeAddModal();
-    }
-    if (event.target == streamModal) {
-        closeStreamModal();
     }
 }
 </script>
 
 <style>
-.observation-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 20px;
+.table-container {
     margin-top: 20px;
+    overflow-x: auto;
 }
 
-.observation-card {
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
     background: white;
     border-radius: 8px;
-    padding: 20px;
+    overflow: hidden;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border-left: 4px solid #ddd;
 }
 
-.observation-card.verified {
-    border-left-color: #4CAF50;
-}
-
-.observation-card.unverified {
-    border-left-color: #ff9800;
-}
-
-.obs-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.obs-info p {
-    margin: 5px 0;
-    font-size: 0.9em;
-}
-
-.obs-notes {
-    background: #f5f5f5;
-    padding: 10px;
-    border-radius: 4px;
-    font-size: 0.85em;
-    margin: 10px 0;
-}
-
-.form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-}
-
-.badge-success {
+.data-table thead {
     background-color: #4CAF50;
     color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.85em;
 }
 
-.badge-warning {
-    background-color: #ff9800;
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.85em;
+.data-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
 }
 
-.btn-success {
-    background-color: #4CAF50;
+.data-table td {
+    padding: 12px;
+    border-bottom: 1px solid #eee;
 }
 
-.btn-success:hover {
-    background-color: #45a049;
+.data-table tbody tr:hover {
+    background-color: #f5f5f5;
 }
 
-/* 实时数据流样式 */
-.stream-list {
-    max-height: 500px;
-    overflow-y: auto;
+.data-table tbody tr:last-child td {
+    border-bottom: none;
 }
 
-.stream-item {
-    background: #f9f9f9;
-    padding: 15px;
-    margin: 10px 0;
-    border-radius: 6px;
-    border-left: 3px solid #2196F3;
-}
-
-.stream-time {
-    font-size: 0.8em;
-    color: #666;
-    margin-bottom: 5px;
-}
-
-.stream-content {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.stream-content .badge {
-    background: #2196F3;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font-size: 0.8em;
+.no-data {
+    text-align: center;
+    color: #999;
+    padding: 20px;
 }
 </style>
 {% endblock %}
