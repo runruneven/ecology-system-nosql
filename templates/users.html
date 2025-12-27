@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}用户管理{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>👥 用户管理</h2>
+    <p class="subtitle">仅管理员可访问</p>
+</div>
+
+<!-- 筛选器 -->
+<div class="filters">
+    <select id="role-filter" onchange="filterUsers()">
+        <option value="">全部角色</option>
+        <option value="admin">管理员</option>
+        <option value="researcher">科研人员</option>
+        <option value="conservationist">保护工作者</option>
+        <option value="public">公众用户</option>
+    </select>
+
+    <select id="status-filter" onchange="filterUsers()">
+        <option value="">全部状态</option>
+        <option value="true">激活</option>
+        <option value="false">禁用</option>
+    </select>
+</div>
+
+<!-- 用户列表 -->
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>用户名</th>
+                <th>姓名</th>
+                <th>邮箱</th>
+                <th>角色</th>
+                <th>状态</th>
+                <th>注册时间</th>
+                <th>最后登录</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody id="users-list">
+            <!-- 动态加载 -->
+        </tbody>
+    </table>
+</div>
+
+<!-- 编辑用户模态框 -->
+<div id="edit-modal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3>编辑用户</h3>
+        
+        <form id="edit-user-form" onsubmit="updateUser(event)">
+            <input type="hidden" id="edit-user-id">
+            
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="edit-username" disabled>
+            </div>
+
+            <div class="form-group">
+                <label>角色 *</label>
+                <select id="edit-role" required>
+                    <option value="public">公众用户</option>
+                    <option value="conservationist">保护工作者</option>
+                    <option value="researcher">科研人员</option>
+                    <option value="admin">管理员</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>状态 *</label>
+                <select id="edit-active" required>
+                    <option value="true">激活</option>
+                    <option value="false">禁用</option>
+                </select>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button type="submit" class="btn btn-primary">保存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- 操作日志模态框 -->
+<div id="logs-modal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+        <span class="close" onclick="closeLogsModal()">&times;</span>
+        <h3>操作日志</h3>
+        
+        <div id="logs-content" class="logs-container">
+            <!-- 动态加载 -->
+        </div>
+    </div>
+</div>
+
+<script>
+let allUsers = [];
+
+// 检查是否为管理员
+async function checkAdminPermission() {
+    const sessionToken = localStorage.getItem('session_token');
+    if (!sessionToken) {
+        alert('请先登录');
+        window.location.href = '/login';
+        return false;
+    }
+    
+    try {
+        const response = await fetch('/api/user/me', {
+            headers: {'X-Session-Token': sessionToken}
+        });
+        const result = await response.json();
+        
+        if (!result.success || result.user.role !== 'admin') {
+            alert('只有管理员才能访问此页面');
+            window.location.href = '/';
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error('权限检查失败:', error);
+        window.location.href = '/login';
+        return false;
+    }
+}
+
+// 加载用户列表
+async function loadUsers() {
+    const sessionToken = localStorage.getItem('session_token');
+    
+    try {
+        const response = await fetch('/api/users', {
+            headers: {'X-Session-Token': sessionToken}
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            allUsers = result.users;
+            displayUsers(allUsers);
+        }
+    } catch (error) {
+        console.error('加载用户失败:', error);
+    }
+}
+
+// 显示用户列表
+function displayUsers(users) {
+    const tbody = document.getElementById('users-list');
+    
+    if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无用户数据</td></tr>';
+        return;
+    }
+    
+    const roleNames = {
+        'admin': '管理员',
+        'researcher': '科研人员',
+        'conservationist': '保护工作者',
+        'public': '公众用户'
+    };
+    
+    tbody.innerHTML = users.map(user => `
+        <tr>
+            <td><strong>${user.username}</strong></td>
+            <td>${user.name || '-'}</td>
+            <td>${user.email || '-'}</td>
+            <td><span class="badge badge-role-${user.role}">${roleNames[user.role] || user.role}</span></td>
+            <td>${user.active ? '<span class="badge badge-success">激活</span>' : '<span class="badge badge-danger">禁用</span>'}</td>
+            <td>${formatDate(user.created_at)}</td>
+            <td>${user.last_login ? formatDate(user.last_login) : '从未登录'}</td>
+            <td>
+                <button onclick="editUser('${user._id}')" class="btn-small btn-warning">编辑</button>
+                <button onclick="viewUserLogs('${user._id}')" class="btn-small">日志</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// 格式化日期
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    return date.toLocaleString('zh-CN');
+}
+
+// 筛选用户
+function filterUsers() {
+    const role = document.getElementById('role-filter').value;
+    const status = document.getElementById('status-filter').value;
+    
+    let filtered = allUsers;
+    
+    if (role) {
+        filtered = filtered.filter(u => u.role === role);
+    }
+    
+    if (status !== '') {
+        const isActive = status === 'true';
+        filtered = filtered.filter(u => u.active === isActive);
+    }
+    
+    displayUsers(filtered);
+}
+
+// 编辑用户
+async function editUser(userId) {
+    const sessionToken = localStorage.getItem('session_token');
+    
+    try {
+        const response = await fetch(`/api/user/${userId}`, {
+            headers: {'X-Session-Token': sessionToken}
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            const user = result.user;
+            document.getElementById('edit-user-id').value = userId;
+            document.getElementById('edit-username').value = user.username;
+            document.getElementById('edit-role').value = user.role;
+            document.getElementById('edit-active').value = user.active.toString();
+            
+            document.getElementById('edit-modal').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('加载用户信息失败:', error);
+    }
+}
+
+// 更新用户
+async function updateUser(event) {
+    event.preventDefault();
+    
+    const userId = document.getElementById('edit-user-id').value;
+    const role = document.getElementById('edit-role').value;
+    const active = document.getElementById('edit-active').value === 'true';
+    
+    const sessionToken = localStorage.getItem('session_token');
+    
+    try {
+        const response = await fetch(`/api/user/${userId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Session-Token': sessionToken
+            },
+            body: JSON.stringify({ role, active })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('更新成功');
+            closeEditModal();
+            loadUsers();
+        } else {
+            alert('更新失败: ' + (result.message || '未知错误'));
+        }
+    } catch (error) {
+        console.error('更新失败:', error);
+        alert('更新失败');
+    }
+}
+
+// 查看用户操作日志
+async function viewUserLogs(userId) {
+    const sessionToken = localStorage.getItem('session_token');
+    
+    try {
+        const response = await fetch(`/api/user/${userId}/logs`, {
+            headers: {'X-Session-Token': sessionToken}
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            displayLogs(result.logs);
+            document.getElementById('logs-modal').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('加载日志失败:', error);
+    }
+}
+
+// 显示操作日志
+function displayLogs(logs) {
+    const container = document.getElementById('logs-content');
+    
+    if (logs.length === 0) {
+        container.innerHTML = '<p class="no-data">暂无操作日志</p>';
+        return;
+    }
+    
+    const actionNames = {
+        'add': '添加',
+        'edit': '编辑',
+        'delete': '删除',
+        'view': '查看',
+        'verify': '验证'
+    };
+    
+    container.innerHTML = logs.map(log => `
+        <div class="log-item">
+            <div class="log-header">
+                <span class="log-action">${actionNames[log.action] || log.action}</span>
+                <span class="log-target">${log.target_type}</span>
+                <span class="log-time">${formatDate(log.timestamp)}</span>
+            </div>
+            <div class="log-details">
+                <p>目标ID: ${log.target_id}</p>
+                ${log.ip_address ? `<p>IP: ${log.ip_address}</p>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+}
+
+function closeLogsModal() {
+    document.getElementById('logs-modal').style.display = 'none';
+}
+
+// 页面加载
+document.addEventListener('DOMContentLoaded', async function() {
+    const hasPermission = await checkAdminPermission();
+    if (hasPermission) {
+        loadUsers();
+    }
+});
+
+// 点击模态框外部关闭
+window.onclick = function(event) {
+    const editModal = document.getElementById('edit-modal');
+    const logsModal = document.getElementById('logs-modal');
+    
+    if (event.target == editModal) {
+        closeEditModal();
+    }
+    if (event.target == logsModal) {
+        closeLogsModal();
+    }
+}
+</script>
+
+<style>
+.badge-role-admin { background: #e74c3c; color: white; }
+.badge-role-researcher { background: #3498db; color: white; }
+.badge-role-conservationist { background: #2ecc71; color: white; }
+.badge-role-public { background: #95a5a6; color: white; }
+
+.logs-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.log-item {
+    border-left: 3px solid #667eea;
+    padding: 15px;
+    margin-bottom: 15px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.log-header {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.log-action {
+    color: #667eea;
+}
+
+.log-target {
+    color: #666;
+}
+
+.log-time {
+    margin-left: auto;
+    color: #999;
+    font-size: 0.9em;
+}
+
+.log-details {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.log-details p {
+    margin: 5px 0;
+}
+</style>
+{% endblock %}

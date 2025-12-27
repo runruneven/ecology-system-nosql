@@ -7,25 +7,29 @@
 </div>
 
 <div class="dashboard">
-    <div class="card">
+    <!-- 物种总数卡片 - 点击跳转到物种管理页面 -->
+    <div class="card clickable" onclick="window.location.href='/species'">
         <div class="card-icon">🦁</div>
         <h3>物种总数</h3>
         <p class="stat-number" id="species-count">加载中...</p>
     </div>
 
-    <div class="card">
+    <!-- 生态关系卡片 - 点击跳转到生态关系页面 -->
+    <div class="card clickable" onclick="window.location.href='/relationships'">
         <div class="card-icon">🔗</div>
         <h3>生态关系</h3>
         <p class="stat-number" id="relationship-count">加载中...</p>
     </div>
 
-    <div class="card">
+    <!-- 栖息地卡片 - 点击跳转到栖息地页面 -->
+    <div class="card clickable" onclick="window.location.href='/habitats'">
         <div class="card-icon">🌍</div>
         <h3>栖息地</h3>
         <p class="stat-number" id="habitat-count">加载中...</p>
     </div>
 
-    <div class="card">
+    <!-- 观测记录卡片 - 点击跳转到观测记录页面 -->
+    <div class="card clickable" onclick="window.location.href='/observations'">
         <div class="card-icon">📊</div>
         <h3>观测记录</h3>
         <p class="stat-number" id="observation-count">加载中...</p>

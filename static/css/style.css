@@ -177,7 +177,42 @@ main {
     box-shadow: 0 5px 20px rgba(0,0,0,0.08);
     transition: transform 0.3s, box-shadow 0.3s;
 }
+/* 可点击卡片样式 */
+.card.clickable {
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
 
+.card.clickable:hover {
+    transform: translateY(-10px) scale(1.02);
+    box-shadow: 0 15px 40px rgba(102, 126, 234, 0.3);
+    border: 2px solid #667eea;
+}
+
+.card.clickable:active {
+    transform: translateY(-8px) scale(1.01);
+}
+
+/* 为卡片添加悬浮提示效果 */
+.card.clickable::after {
+    content: '点击查看详情';
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(102, 126, 234, 0.9);
+    color: white;
+    padding: 5px 15px;
+    border-radius: 15px;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+}
+
+.card.clickable:hover::after {
+    opacity: 1;
+}
 .card:hover {
     transform: translateY(-5px);
     box-shadow: 0 10px 30px rgba(0,0,0,0.15);

@@ -49,16 +49,16 @@
 
         <!-- 结果统计 -->
         <div class="results-tabs">
-            <button class="tab active" onclick="showTab('all')">
+            <button class="tab active" onclick="showTab('all', event)">
                 全部 (<span id="count-all">0</span>)
             </button>
-            <button class="tab" onclick="showTab('species')">
+            <button class="tab" onclick="showTab('species', event)">
                 物种 (<span id="count-species">0</span>)
             </button>
-            <button class="tab" onclick="showTab('habitats')">
+            <button class="tab" onclick="showTab('habitats', event)">
                 栖息地 (<span id="count-habitats">0</span>)
             </button>
-            <button class="tab" onclick="showTab('observations')">
+            <button class="tab" onclick="showTab('observations', event)">
                 观测记录 (<span id="count-observations">0</span>)
             </button>
         </div>
@@ -160,10 +160,25 @@ async function performSearch(event) {
     document.getElementById('results-title').textContent = `"${keyword}" 的搜索结果`;
     
     try {
+        // ⭐ 添加调试日志
+        console.log('🔍 开始搜索:', keyword, 'category:', category);
+        
         const response = await fetch(
             `/api/search?q=${encodeURIComponent(keyword)}&category=${category}`
         );
+        
+        // ⭐ 检查响应状态
+        console.log('📡 响应状态:', response.status, response.statusText);
+        
+        // ⭐ 检查响应是否成功
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
+        
+        // ⭐ 打印返回的数据
+        console.log('📦 返回数据:', data);
         
         if (data.success) {
             searchResults = data.results;
@@ -174,15 +189,25 @@ async function performSearch(event) {
             
             // 刷新热门搜索
             loadPopularSearches();
+            
+            console.log('✅ 搜索成功，共找到', data.total, '条结果');
+            
         } else {
+            console.warn('⚠️ 搜索返回 success=false:', data.message);
             showNoResults();
         }
         
     } catch (error) {
-        console.error('搜索失败:', error);
-        alert('搜索失败，请重试');
+        // ⭐ 详细的错误信息
+        console.error('❌ 搜索失败，详细错误:', error);
+        console.error('错误类型:', error.name);
+        console.error('错误消息:', error.message);
+        console.error('错误堆栈:', error.stack);
+        
+        alert('搜索失败，请重试\n错误详情：' + error.message);
     }
 }
+
 
 // 显示搜索结果
 function displayResults(results) {
@@ -377,12 +402,30 @@ function showNoResults() {
 }
 
 // 切换标签页
-function showTab(tab) {
+function showTab(tab, event) {
     currentTab = tab;
     
     // 更新标签激活状态
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    event.target.classList.add('active');
+    
+    // ⭐ 修复：只有当 event 存在时才操作 target
+    if (event && event.target) {
+        event.target.classList.add('active');
+    } else {
+        // 如果没有 event，通过 tab 参数找到对应的按钮并激活
+        const tabs = document.querySelectorAll('.tab');
+        tabs.forEach(t => {
+            if (t.textContent.includes('全部') && tab === 'all') {
+                t.classList.add('active');
+            } else if (t.textContent.includes('物种') && tab === 'species') {
+                t.classList.add('active');
+            } else if (t.textContent.includes('栖息地') && tab === 'habitats') {
+                t.classList.add('active');
+            } else if (t.textContent.includes('观测记录') && tab === 'observations') {
+                t.classList.add('active');
+            }
+        });
+    }
     
     // 显示/隐藏对应内容
     if (tab === 'all') {

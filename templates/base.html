@@ -20,6 +20,7 @@
                 <li><a href="/statistics">数据统计</a></li>
                 <li><a href="/search">搜索</a></li>
                 <li><a href="/monitor">系统监控</a></li>
+                 <li id="users-menu-item" style="display: none;"><a href="/users">用户管理</a></li>
                 <li id="login-menu-item"><a href="/login">登录</a></li>
                 <li id="logout-menu-item" style="display: none;"><a href="#" onclick="handleLogout(); return false;">退出</a></li>
             </ul>
@@ -31,7 +32,7 @@
     </main>
 
     <footer>
-        <p>© 2024 动植物物种生态关系系统 | NoSQL 数据库课程设计</p>
+        <p>© 2025 动植物物种生态关系系统 | NoSQL 数据库课程设计</p>
         <p id="system-status">系统状态：<span id="status-text">检查中...</span></p>
     </footer>
 
@@ -39,35 +40,44 @@
     <script>
         // 检查登录状态
         function checkLoginStatus() {
-            const sessionToken = localStorage.getItem('session_token');
-            const loginItem = document.getElementById('login-menu-item');
-            const logoutItem = document.getElementById('logout-menu-item');
-            
-            if (sessionToken) {
-                fetch('/api/user/me', {
-                    headers: {'X-Session-Token': sessionToken}
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        if (loginItem) loginItem.style.display = 'none';
-                        if (logoutItem) logoutItem.style.display = 'block';
-                    } else {
-                        localStorage.removeItem('session_token');
-                        if (loginItem) loginItem.style.display = 'block';
-                        if (logoutItem) logoutItem.style.display = 'none';
-                    }
-                })
-                .catch(() => {
-                    localStorage.removeItem('session_token');
-                    if (loginItem) loginItem.style.display = 'block';
-                    if (logoutItem) logoutItem.style.display = 'none';
-                });
+    const sessionToken = localStorage.getItem('session_token');
+    const loginItem = document.getElementById('login-menu-item');
+    const logoutItem = document.getElementById('logout-menu-item');
+    const usersItem = document.getElementById('users-menu-item');  // ⭐ 新增
+    
+    if (sessionToken) {
+        fetch('/api/user/me', {
+            headers: {'X-Session-Token': sessionToken}
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (loginItem) loginItem.style.display = 'none';
+                if (logoutItem) logoutItem.style.display = 'block';
+                
+                // ⭐ 如果是管理员，显示用户管理入口
+                if (data.user.role === 'admin' && usersItem) {
+                    usersItem.style.display = 'block';
+                }
             } else {
+                localStorage.removeItem('session_token');
                 if (loginItem) loginItem.style.display = 'block';
                 if (logoutItem) logoutItem.style.display = 'none';
+                if (usersItem) usersItem.style.display = 'none';
             }
-        }
+        })
+        .catch(() => {
+            localStorage.removeItem('session_token');
+            if (loginItem) loginItem.style.display = 'block';
+            if (logoutItem) logoutItem.style.display = 'none';
+            if (usersItem) usersItem.style.display = 'none';
+        });
+    } else {
+        if (loginItem) loginItem.style.display = 'block';
+        if (logoutItem) logoutItem.style.display = 'none';
+        if (usersItem) usersItem.style.display = 'none';
+    }
+}
         
         // 退出登录
         function handleLogout() {
@@ -126,7 +136,7 @@
             checkLoginStatus();
             checkSystemStatus();
             // 每30秒检查一次系统状态
-            setInterval(checkSystemStatus, 30000);
+            setInterval(checkSystemStatus, 10000);
         });
     </script>
     {% block scripts %}{% endblock %}

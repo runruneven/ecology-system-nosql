@@ -125,3 +125,14 @@ class ObservationModel:
     def count_observations(self):
         """统计观测记录总数"""
         return self.mongo_col.count_documents({})
+
+    def get_unverified_observations(self, limit=50):
+        """获取待验证的观测记录"""
+        return list(self.mongo_col.find({'verified': False}).limit(limit))
+
+    def bulk_verify(self, observation_ids, expert_id):
+        """批量验证"""
+        self.mongo_col.update_many(
+            {'_id': {'$in': [ObjectId(id) for id in observation_ids]}},
+            {'$set': {'verified': True, 'verified_by': expert_id}}
+        )

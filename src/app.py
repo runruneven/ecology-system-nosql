@@ -13,6 +13,7 @@ from .models.observation import ObservationModel
 from .models.search import SearchModel
 
 from .db_manager import db_manager
+from .utils.serializers import serialize_doc
 
 app = Flask(__name__, 
             template_folder='../templates',  # 往上一级找templates
@@ -132,6 +133,20 @@ def require_auth(action='view'):
         return decorated_function
     return decorator
 
+
+#  备份恢复机制
+@app.route('/api/backup/trigger', methods=['POST'])
+@require_auth('admin')  # 只有管理员可以
+def trigger_backup():
+    from .utils.backup import backup_mongodb, backup_neo4j
+    mongo_path = backup_mongodb()
+    neo4j_path = backup_neo4j()
+    return jsonify({
+        'success': True,
+        'mongodb_backup': mongo_path,
+        'neo4j_backup': neo4j_path
+    })
+
 # 页面路由
 @app.route('/species')
 def species_page():
@@ -208,6 +223,14 @@ def api_statistics():
 def observations_page():
     """观测记录页面"""
     return render_template('observations.html')
+
+@app.route('/api/observations/unverified', methods=['GET'])
+def api_unverified_observations():
+    """获取待验证列表"""
+    observations = observation_model.get_unverified_observations()
+    return jsonify(observations)
+
+
 
 @app.route('/search')
 def search_page():
@@ -590,7 +613,6 @@ def api_observations_statistics():
 
 
 
-# 搜索相关 API 路由
 @app.route('/api/search', methods=['GET'])
 def api_search():
     """全文搜索 - 跨所有集合"""
@@ -601,6 +623,9 @@ def api_search():
         return jsonify({'error': '搜索关键词不能为空'}), 400
     
     try:
+        # ⭐⭐⭐ 添加这一行 - 递增今日搜索次数 ⭐⭐⭐
+        db_manager.redis.incr('today_searches')
+        
         # 使用 SearchModel 进行统一搜索
         results = search_model.search_all(keyword, category=category if category else None)
         
@@ -827,6 +852,59 @@ def api_register():
             name=data.get('name', '')
         )
         
+        # ⭐⭐⭐ 新增：注册成功后自动登录 ⭐⭐⭐
+        login_result = user_model.login(username, password)
+        
+        if login_result:
+            return jsonify({
+                'success': True,
+                'message': '注册成功',
+                'user_id': user_id,
+                'session_token': login_result['session_token'],  # 返回会话令牌
+                'user': login_result['user']
+            })
+        else:
+            # 注册成功但登录失败（理论上不会发生）
+            return jsonify({
+                'success': True,
+                'message': '注册成功，请登录',
+                'user_id': user_id
+            })
+            
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+    """用户注册"""
+    try:
+        data = request.json
+        username = data.get('username', '')
+        password = data.get('password', '')
+        role = data.get('role', 'public')
+        
+        if not username or not password:
+            return jsonify({
+                'success': False,
+                'message': '用户名和密码不能为空'
+            }), 400
+        
+        # 注册用户
+        user_id = user_model.register_user(
+            username=username,
+            password=password,
+            role=role,
+            email=data.get('email', ''),
+            name=data.get('name', '')
+        )
+        
+
+
         return jsonify({
             'success': True,
             'message': '注册成功',
@@ -1531,6 +1609,147 @@ def log_slow_queries(response):
     
     return response
 
+# ==================== 用户管理相关 API ====================
+
+@app.route('/api/users', methods=['GET'])
+@require_auth('view')  # 只有登录用户可查看
+def api_list_users():
+    """获取用户列表（仅管理员）"""
+    # 检查是否为管理员
+    if request.current_user.get('role') != 'admin':
+        return jsonify({
+            'success': False,
+            'message': '只有管理员才能查看用户列表'
+        }), 403
+    
+    try:
+        # 从 MongoDB 获取所有用户
+        users = list(db_manager.mongo['users'].find())
+        
+        # 序列化并移除敏感信息
+        users_data = []
+        for user in users:
+            user_data = serialize_doc(user)
+            user_data.pop('password_hash', None)  # 移除密码哈希
+            users_data.append(user_data)
+        
+        return jsonify({
+            'success': True,
+            'users': users_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/user/<user_id>', methods=['GET', 'PUT'])
+@require_auth('view')
+def api_user_detail(user_id):
+    """获取或更新用户详情"""
+    if request.method == 'GET':
+        try:
+            user = user_model.get_user(user_id)
+            if user:
+                return jsonify({
+                    'success': True,
+                    'user': user
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '用户不存在'
+                }), 404
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+    
+    elif request.method == 'PUT':
+        # 只有管理员可以修改用户
+        if request.current_user.get('role') != 'admin':
+            return jsonify({
+                'success': False,
+                'message': '只有管理员才能修改用户信息'
+            }), 403
+        
+        try:
+            from bson import ObjectId
+            data = request.json
+            
+            # 更新用户信息
+            update_data = {}
+            if 'role' in data:
+                update_data['role'] = data['role']
+            if 'active' in data:
+                update_data['active'] = data['active']
+            
+            result = db_manager.mongo['users'].update_one(
+                {'_id': ObjectId(user_id)},
+                {'$set': update_data}
+            )
+            
+            if result.matched_count > 0:
+                log_user_action('edit', 'user', user_id, details=update_data)
+                return jsonify({
+                    'success': True,
+                    'message': '更新成功'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '用户不存在'
+                }), 404
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 500
+
+
+@app.route('/api/user/<user_id>/logs', methods=['GET'])
+@require_auth('view')
+def api_user_logs(user_id):
+    """获取用户操作日志（仅管理员）"""
+    if request.current_user.get('role') != 'admin':
+        return jsonify({
+            'success': False,
+            'message': '只有管理员才能查看操作日志'
+        }), 403
+    
+    try:
+        # 从 MongoDB 获取该用户的操作日志
+        logs = list(
+            db_manager.mongo['logs']
+            .find({'user_id': user_id})
+            .sort('timestamp', -1)
+            .limit(100)
+        )
+        
+        logs_data = [serialize_doc(log) for log in logs]
+        
+        return jsonify({
+            'success': True,
+            'logs': logs_data
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+@app.route('/register')
+def register_page():
+    """注册页面"""
+    return render_template('register.html')
+
+@app.route('/users')
+def users_page():
+    """用户管理页面（仅管理员）"""
+    return render_template('users.html')
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
+

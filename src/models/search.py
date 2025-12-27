@@ -284,7 +284,9 @@ class SearchModel:
             'related_habitats': [],
             'popular_searches': []
         }
-        
+    
+
+    
         # 1. 查找搜索词对应的物种
         species = self.species_col.find_one(
             {'name': {'$regex': keyword, '$options': 'i'}}

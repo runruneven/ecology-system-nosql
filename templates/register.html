@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block title %}用户注册{% endblock %}
+
+{% block content %}
+<div class="login-container">
+    <div class="login-box">
+        <h2>用户注册</h2>
+        
+        <!-- ⭐ 移除了 onsubmit 属性 -->
+        <form id="register-form">
+            <div class="form-group">
+                <label>用户名 *</label>
+                <input type="text" id="username" name="username" required 
+                       placeholder="请输入用户名（4-20个字符）" 
+                       minlength="4" maxlength="20">
+            </div>
+
+            <div class="form-group">
+                <label>密码 *</label>
+                <input type="password" id="password" name="password" required 
+                       placeholder="请输入密码（至少6个字符）" 
+                       minlength="6">
+            </div>
+
+            <div class="form-group">
+                <label>确认密码 *</label>
+                <input type="password" id="confirm-password" name="confirm_password" required 
+                       placeholder="请再次输入密码">
+            </div>
+
+            <div class="form-group">
+                <label>真实姓名</label>
+                <input type="text" id="name" name="name" placeholder="请输入真实姓名">
+            </div>
+
+            <div class="form-group">
+                <label>邮箱</label>
+                <input type="email" id="email" name="email" placeholder="example@email.com">
+            </div>
+
+            <div class="form-group">
+                <label>角色 *</label>
+                <select id="role" name="role" required>
+                    <option value="public">公众用户（仅可查看）</option>
+                    <option value="conservationist">保护工作者（可查看、添加）</option>
+                    <option value="researcher">科研人员（可查看、添加、编辑、验证）</option>
+                </select>
+                <small class="form-hint">注：管理员角色需由现有管理员授予</small>
+            </div>
+
+            <div id="error-message" class="error-message" style="display: none;"></div>
+            <div id="success-message" class="success-message" style="display: none;"></div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">注册</button>
+                <a href="/login" class="btn btn-secondary">已有账号？去登录</a>
+            </div>
+        </form>
+        
+        <p style="text-align: center; margin-top: 20px;">
+            <a href="/" style="color: #667eea; text-decoration: none;">← 返回首页</a>
+        </p>
+    </div>
+</div>
+
+<script>
+// ⭐ DOMContentLoaded 事件确保页面加载完成后再绑定
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🔧 注册页面初始化...');
+    
+    const form = document.getElementById('register-form');
+    if (form) {
+        form.addEventListener('submit', handleRegister);
+        console.log('✅ 表单事件已绑定');
+    } else {
+        console.error('❌ 找不到注册表单');
+    }
+});
+
+async function handleRegister(event) {
+    console.log('📝 表单提交事件触发');
+    
+    // ⭐ 阻止默认提交行为
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+    const name = document.getElementById('name').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const role = document.getElementById('role').value;
+    
+    const errorMessage = document.getElementById('error-message');
+    const successMessage = document.getElementById('success-message');
+    
+    // 隐藏之前的消息
+    errorMessage.style.display = 'none';
+    successMessage.style.display = 'none';
+    
+    // 验证密码
+    if (password !== confirmPassword) {
+        errorMessage.textContent = '两次输入的密码不一致';
+        errorMessage.style.display = 'block';
+        return false;
+    }
+    
+    // 验证用户名长度
+    if (username.length < 4 || username.length > 20) {
+        errorMessage.textContent = '用户名长度必须在4-20个字符之间';
+        errorMessage.style.display = 'block';
+        return false;
+    }
+    
+    // 验证密码长度
+    if (password.length < 6) {
+        errorMessage.textContent = '密码长度至少6个字符';
+        errorMessage.style.display = 'block';
+        return false;
+    }
+    
+    console.log('✅ 表单验证通过，准备提交...');
+    
+    try {
+        const response = await fetch('/api/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username: username,
+                password: password,
+                role: role,
+                name: name || '',
+                email: email || ''
+            })
+        });
+        
+        console.log('📡 服务器响应状态:', response.status);
+        
+        const result = await response.json();
+        console.log('📦 服务器返回数据:', result);
+        
+        if (result.success) {
+            if (result.session_token) {
+                console.log('✅ 注册成功，自动登录');
+                localStorage.setItem('session_token', result.session_token);
+                successMessage.textContent = '注册成功！正在跳转到首页...';
+                successMessage.style.display = 'block';
+                
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1000);
+            } else {
+                console.log('✅ 注册成功，跳转到登录页');
+                successMessage.textContent = '注册成功！3秒后跳转到登录页面...';
+                successMessage.style.display = 'block';
+                
+                setTimeout(() => {
+                    window.location.href = '/login';
+                }, 3000);
+            }
+        } else {
+            console.error('❌ 注册失败:', result.message);
+            errorMessage.textContent = result.message || '注册失败';
+            errorMessage.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('❌ 请求失败:', error);
+        errorMessage.textContent = '注册失败，请重试';
+        errorMessage.style.display = 'block';
+    }
+    
+    return false;
+}
+</script>
+
+<style>
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 60vh;
+    padding: 20px;
+}
+
+.login-box {
+    background: white;
+    padding: 40px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 500px;
+}
+
+.login-box h2 {
+    margin-bottom: 30px;
+    text-align: center;
+    color: #333;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    color: #555;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.form-hint {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #999;
+    font-style: italic;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 30px;
+}
+
+.form-actions .btn,
+.form-actions button {
+    flex: 1;
+    padding: 12px;
+    text-align: center;
+    text-decoration: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.btn-primary {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #45a049;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+}
+
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    border: 1px solid #f5c6cb;
+}
+
+.success-message {
+    background-color: #d4edda;
+    color: #155724;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+    border: 1px solid #c3e6cb;
+}
+</style>
+{% endblock %}
